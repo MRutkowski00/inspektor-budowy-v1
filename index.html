@@ -1,0 +1,3623 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>INSPEKTOR BUDOWY</title>
+
+  <!-- PWA Standalone Meta & Manifest inline (Poprawione dla pełnej instalacji) -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Inspektor Budowy">
+  <meta name="theme-color" content="#121212">
+  <!-- Dodano ikony do manifestu, aby urządzenia mogły zainstalować apkę na pulpicie -->
+  <link rel="manifest" href="data:application/manifest+json;charset=utf-8,%7B%22name%22%3A%22INSPEKTOR%20BUDOWY%22%2C%22short_name%22%3A%22Inspektor%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%230a0a0a%22%2C%22theme_color%22%3A%22%23121212%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iIzI1NjNlYiI%2BPHBhdGggZD0iTTEyIDJMMiA3bDEwIDUgMTAtNXpNMiAxN2wxMCA1IDEwLTVNMjIgMTJsLTEwIDUtMTAtNSIvPjwvc3ZnPg%3D%3D%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fsvg%2Bxml%22%7D%5D%7D">
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- PDF.js CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+  <style>
+    :root {
+      --bg-dark: #0a0a0a;
+      --card-dark: #141414;
+      --border-dark: #222222;
+      --text-main: #f5f5f5;
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      /* Zapobieganie natywnemu odświeżaniu (pull-to-refresh) na mobile */
+      overscroll-behavior-y: none;
+    }
+
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0e0e0e; }
+    ::-webkit-scrollbar-thumb { background: #282828; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3c3c3c; }
+
+    /* Wszystkie viewports dotykowe - Wymuszenie braku akcji dotykowych przeglądarki */
+    #viewport, #rohe-viewport, #takeoff-viewport {
+      cursor: grab;
+      touch-action: none; 
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #viewport.panning, #rohe-viewport.panning, #takeoff-viewport.panning { cursor: grabbing; }
+
+    .pin-marker {
+      position: absolute;
+      width: 36px;
+      height: 36px;
+      border-radius: 50% 50% 50% 0;
+      transform: translate(-50%, -100%) rotate(-45deg);
+      background: #e11d48;
+      border: 3px solid #ffffff;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.9), 0 0 0 1px rgba(0,0,0,0.5);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 50;
+      transition: transform 0.15s ease-out;
+    }
+    .pin-marker:hover {
+      transform: translate(-50%, -105%) rotate(-45deg) scale(1.15);
+      z-index: 60;
+    }
+    .pin-marker span {
+      transform: rotate(45deg);
+      color: #ffffff;
+      font-weight: 900;
+      font-size: 14px;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+    }
+
+    .a4-page {
+      background: #ffffff;
+      color: #000000;
+      width: 210mm;
+      min-height: 296mm;
+      margin: 0 auto 30px auto;
+      padding: 15mm 20mm 15mm 20mm;
+      box-sizing: border-box;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      font-family: Arial, Helvetica, sans-serif;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+
+    @media print {
+      body { background: #fff !important; color: #000 !important; overflow: visible !important; }
+      .no-print, header, nav, #floating-tools-container, .modal-backdrop { display: none !important; }
+      .print-panel { display: block !important; position: static !important; }
+      .a4-page {
+        margin: 0 !important;
+        box-shadow: none !important;
+        border: none !important;
+        page-break-after: always;
+        break-inside: avoid;
+        height: 297mm !important;
+      }
+    }
+  </style>
+</head>
+<body class="antialiased">
+
+  <!-- TOP HEADER -->
+  <header class="no-print bg-[#121212]/95 backdrop-blur-md border-b border-[#222] px-3 sm:px-5 py-2.5 flex items-center justify-between z-40 select-none">
+    <div class="flex items-center gap-2 sm:gap-3">
+      <!-- Przycisk Wstecz zaimplementowany i zawsze widoczny -->
+      <button onclick="handleAppBack()" id="header-back-btn" class="w-8 h-8 rounded-lg bg-[#202020] hover:bg-[#2b2b2b] border border-[#333] flex items-center justify-center text-white transition-all active:scale-90" title="Cofnij">
+        <i data-lucide="arrow-left" class="w-4 h-4"></i>
+      </button>
+
+      <button onclick="switchView('dashboard')" title="Pulpit główny" class="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center font-black text-white text-base shadow-lg shadow-blue-600/30 hover:scale-105 transition-transform">
+        🏗️
+      </button>
+      <div>
+        <div class="font-bold text-sm leading-tight text-white tracking-tight flex items-center gap-2">
+          <span>INSPEKTOR BUDOWY</span>
+        </div>
+        <div class="text-[11px] text-gray-400 font-medium truncate max-w-[170px] sm:max-w-none flex items-center gap-1.5">
+          <span id="header-active-info" class="cursor-pointer hover:text-white" onclick="promptRenameProject()" title="Zmień nazwę">Projekt: Inwestycja Budowlana</span>
+          <button onclick="promptRenameProject()" class="text-gray-500 hover:text-blue-400"><i data-lucide="edit-2" class="w-3 h-3"></i></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pasek zakładek nawigacyjnych -->
+    <nav class="hidden lg:flex bg-[#1c1c1c] p-1 rounded-xl border border-[#2a2a2a] gap-1 text-xs font-semibold">
+      <button onclick="switchView('dashboard')" id="nav-btn-dashboard" class="nav-tab px-3 py-1.5 rounded-lg transition-all text-white bg-[#2d2d2d] shadow-sm flex items-center gap-1.5">
+        <i data-lucide="layout-grid" class="w-3.5 h-3.5"></i> Pulpit
+      </button>
+      <button onclick="switchView('plan')" id="nav-btn-plan" class="nav-tab px-3 py-1.5 rounded-lg transition-all text-gray-400 hover:text-white flex items-center gap-1.5">
+        <i data-lucide="map" class="w-3.5 h-3.5"></i> Rzut & Usterki (<span id="nav-count-pins">0</span>)
+      </button>
+      <button onclick="switchView('todo')" id="nav-btn-todo" class="nav-tab px-3 py-1.5 rounded-lg transition-all text-gray-400 hover:text-white flex items-center gap-1.5">
+        <i data-lucide="check-square" class="w-3.5 h-3.5"></i> Zadania To-Do
+      </button>
+      <button onclick="switchView('calendar')" id="nav-btn-calendar" class="nav-tab px-3 py-1.5 rounded-lg transition-all text-gray-400 hover:text-white flex items-center gap-1.5">
+        <i data-lucide="calendar" class="w-3.5 h-3.5"></i> Kalendarz & Kalendarium
+      </button>
+      <button onclick="switchView('norms')" id="nav-btn-norms" class="nav-tab px-3 py-1.5 rounded-lg transition-all text-gray-400 hover:text-white flex items-center gap-1.5">
+        <i data-lucide="shield-check" class="w-3.5 h-3.5"></i> Normy i Odbiory
+      </button>
+      <button onclick="switchView('report-rohe')" id="nav-btn-report-rohe" class="nav-tab px-3 py-1.5 rounded-lg transition-all text-gray-400 hover:text-white flex items-center gap-1.5">
+        <i data-lucide="file-text" class="w-3.5 h-3.5"></i> Raport Jakościowy RJ-V
+      </button>
+    </nav>
+
+    <!-- Zarządzanie projektem -->
+    <div class="flex items-center gap-2">
+      <div id="sync-status" class="hidden sm:flex items-center gap-1.5 text-[11px] text-emerald-400 bg-emerald-950/40 border border-emerald-800/40 px-2.5 py-1 rounded-full">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span>Zapisano</span>
+      </div>
+
+      <div class="relative">
+        <button onclick="toggleElement('project-menu-dropdown')" class="bg-[#1e1e1e] hover:bg-[#282828] text-gray-200 border border-[#333] px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5">
+          <i data-lucide="folder" class="w-3.5 h-3.5"></i>
+          <span>Opcje</span>
+          <i data-lucide="chevron-down" class="w-3 h-3 text-gray-400"></i>
+        </button>
+
+        <div id="project-menu-dropdown" class="hidden absolute right-0 mt-2 w-56 bg-[#1a1a1a] border border-[#333] rounded-xl shadow-2xl py-1.5 z-50">
+          <button onclick="exportProjectFile()" class="w-full text-left px-3.5 py-2 text-xs text-gray-200 hover:bg-[#252525] flex items-center gap-2">
+            <i data-lucide="download" class="w-3.5 h-3.5 text-blue-400"></i> Zapisz projekt (.insp)
+          </button>
+          <label class="w-full text-left px-3.5 py-2 text-xs text-gray-200 hover:bg-[#252525] flex items-center gap-2 cursor-pointer">
+            <i data-lucide="upload" class="w-3.5 h-3.5 text-emerald-400"></i> Wczytaj projekt (.insp)
+            <input type="file" accept=".insp,.json" class="hidden" onchange="importProjectFile(event)">
+          </label>
+          <div class="border-t border-[#2d2d2d] my-1"></div>
+          <button onclick="createNewEmptyProject()" class="w-full text-left px-3.5 py-2 text-xs text-amber-400 hover:bg-[#252525] flex items-center gap-2">
+            <i data-lucide="file-plus" class="w-3.5 h-3.5"></i> Nowy projekt (Czysty)
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- PASEK STRUKTURY: BUDYNKI & KONDYGNACJE (Widoczny tylko w rzucie roboczym) -->
+  <div id="structure-subbar" class="hidden no-print bg-[#0d0d0d] border-b border-[#1c1c1c] px-4 py-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 select-none">
+    <div class="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
+      <span class="text-[11px] font-bold text-gray-500 uppercase tracking-wider shrink-0 flex items-center gap-1">
+        <i data-lucide="building" class="w-3.5 h-3.5 text-blue-400"></i> Budynek:
+      </span>
+      <div id="buildings-chips-list" class="flex items-center gap-1.5 shrink-0"></div>
+      <button onclick="promptNewBuilding()" class="bg-[#181818] hover:bg-[#222] text-gray-300 hover:text-white border border-[#2e2e2e] text-xs font-semibold px-2 py-0.5 rounded-md flex items-center gap-1 shrink-0">
+        <i data-lucide="plus" class="w-3 h-3"></i> Budynek
+      </button>
+    </div>
+
+    <div class="flex items-center gap-2 overflow-x-auto border-t sm:border-t-0 border-[#1a1a1a] pt-1 sm:pt-0">
+      <span class="text-[11px] font-bold text-gray-500 uppercase tracking-wider shrink-0 flex items-center gap-1">
+        <i data-lucide="layers" class="w-3.5 h-3.5 text-amber-400"></i> Piętro:
+      </span>
+      <div id="floors-chips-list" class="flex items-center gap-1.5 shrink-0"></div>
+      <button onclick="promptNewFloor()" class="bg-[#181818] hover:bg-[#222] text-gray-300 hover:text-white border border-[#2e2e2e] text-xs font-semibold px-2 py-0.5 rounded-md flex items-center gap-1 shrink-0">
+        <i data-lucide="plus" class="w-3 h-3"></i> Piętro
+      </button>
+      <button onclick="clearCurrentFloorPins()" class="ml-2 text-rose-400 hover:text-rose-300 text-[11px] font-medium border border-rose-950 bg-rose-950/30 px-2 py-0.5 rounded-md flex items-center gap-1">
+        <i data-lucide="trash-2" class="w-3 h-3"></i> Wyczyść pinezki piętra
+      </button>
+    </div>
+  </div>
+
+  <main class="flex-1 relative overflow-hidden">
+
+    <!-- 1. WIDOK: PULPIT GŁÓWNY -->
+    <div id="view-dashboard" class="view-panel w-full h-full overflow-y-auto p-4 sm:p-8 bg-[#0a0a0a]">
+      <div class="max-w-5xl mx-auto space-y-6">
+        <div>
+          <h1 class="text-2xl font-black text-white flex items-center gap-2">
+            🏗️ Pulpit Inżyniera
+          </h1>
+          <p class="text-xs text-gray-400 mt-1">Dedykowane moduły inżynierskie z obsługą PDF/JPG oraz pamięcią bez limitu.</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div onclick="switchView('plan')" class="bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] hover:border-blue-500/50 p-5 rounded-2xl cursor-pointer transition-all flex flex-col justify-between group shadow-xl">
+            <div>
+              <div class="w-12 h-12 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/30 flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
+                <i data-lucide="map" class="w-6 h-6"></i>
+              </div>
+              <h3 class="font-bold text-white text-base">Rzut & Usterki Robocze</h3>
+              <p class="text-xs text-gray-400 mt-1">Podkłady PDF/JPG z gestami zoomu dwoma palcami i raportem 1 usterka/strona.</p>
+            </div>
+            <div class="mt-4 pt-3 border-t border-[#222] flex items-center justify-between text-xs text-gray-300">
+              <span>Aktywne pinezki:</span>
+              <span class="font-bold text-rose-400" id="dash-count-pins">0</span>
+            </div>
+          </div>
+
+          <div onclick="switchView('todo')" class="bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] hover:border-emerald-500/50 p-5 rounded-2xl cursor-pointer transition-all flex flex-col justify-between group shadow-xl">
+            <div>
+              <div class="w-12 h-12 rounded-xl bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
+                <i data-lucide="check-square" class="w-6 h-6"></i>
+              </div>
+              <h3 class="font-bold text-white text-base">Zadania To-Do</h3>
+              <p class="text-xs text-gray-400 mt-1">Styl Microsoft To-Do: zamówienia materiałów, telefony i sprawy pilne.</p>
+            </div>
+            <div class="mt-4 pt-3 border-t border-[#222] flex items-center justify-between text-xs text-gray-300">
+              <span>Do zrobienia:</span>
+              <span class="font-bold text-emerald-400" id="dash-count-todos">0</span>
+            </div>
+          </div>
+
+          <div onclick="switchView('calendar')" class="bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] hover:border-amber-500/50 p-5 rounded-2xl cursor-pointer transition-all flex flex-col justify-between group shadow-xl">
+            <div>
+              <div class="w-12 h-12 rounded-xl bg-amber-600/20 text-amber-400 border border-amber-500/30 flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
+                <i data-lucide="calendar" class="w-6 h-6"></i>
+              </div>
+              <h3 class="font-bold text-white text-base">Kalendarz & Kalendarium</h3>
+              <p class="text-xs text-gray-400 mt-1">Dziennik budowy, harmonogram prac, opóźnienia i audyt zmian dzień po dniu.</p>
+            </div>
+            <div class="mt-4 pt-3 border-t border-[#222] flex items-center justify-between text-xs text-gray-300">
+              <span>Wpisy / Zdarzenia:</span>
+              <span class="font-bold text-amber-400" id="dash-count-logs">0</span>
+            </div>
+          </div>
+
+          <div onclick="switchView('norms')" class="bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] hover:border-purple-500/50 p-5 rounded-2xl cursor-pointer transition-all flex flex-col justify-between group shadow-xl">
+            <div>
+              <div class="w-12 h-12 rounded-xl bg-purple-600/20 text-purple-400 border border-purple-500/30 flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
+                <i data-lucide="shield-check" class="w-6 h-6"></i>
+              </div>
+              <h3 class="font-bold text-white text-base">Normy & Odbiory (ITB)</h3>
+              <p class="text-xs text-gray-400 mt-1">Kompendium wiedzy z tolerancjami, checklista z oznaczeniem „Nice to have” i nowe normy.</p>
+            </div>
+            <div class="mt-4 pt-3 border-t border-[#222] flex items-center justify-between text-xs text-gray-300">
+              <span>Katalog norm:</span>
+              <span class="font-bold text-purple-400" id="dash-count-norms">4 normy</span>
+            </div>
+          </div>
+
+          <div onclick="switchView('report-rohe')" class="bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] hover:border-rose-500/50 p-5 rounded-2xl cursor-pointer transition-all flex flex-col justify-between group shadow-xl">
+            <div>
+              <div class="w-12 h-12 rounded-xl bg-rose-600/20 text-rose-400 border border-rose-500/30 flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
+                <i data-lucide="file-text" class="w-6 h-6"></i>
+              </div>
+              <h3 class="font-bold text-white text-base">Raport Jakościowy RJ-V</h3>
+              <p class="text-xs text-gray-400 mt-1">Osobny rzut PDF/JPG, numerowane wady, wybór z istniejących problemów i selekcja zdjęć.</p>
+            </div>
+            <div class="mt-4 pt-3 border-t border-[#222] flex items-center justify-between text-xs text-gray-300">
+              <span>Wzorzec:</span>
+              <span class="text-rose-400 font-bold">Standard RJ-V</span>
+            </div>
+          </div>
+
+          <div onclick="openTakeoffModal()" class="bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] hover:border-emerald-500/50 p-5 rounded-2xl cursor-pointer transition-all flex flex-col justify-between group shadow-xl">
+            <div>
+              <div class="w-12 h-12 rounded-xl bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
+                <i data-lucide="ruler" class="w-6 h-6"></i>
+              </div>
+              <h3 class="font-bold text-white text-base">Księga Obmiarów</h3>
+              <p class="text-xs text-gray-400 mt-1">Mierzenie odcinków 2 kliknięciami, precyzyjne nanoszenie na wydruk A4 i pełna obsługa PDF.</p>
+            </div>
+            <div class="mt-4 pt-3 border-t border-[#222] flex items-center justify-between text-xs text-gray-300">
+              <span>Karty obmiarowe:</span>
+              <span class="font-bold text-emerald-400" id="dash-count-takeoffs">0 kart</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. WIDOK: RZUT & USTERKI ROBOCZE -->
+    <div id="view-plan" class="view-panel w-full h-full relative hidden">
+      <div id="viewport" class="w-full h-full relative overflow-hidden bg-[#070707]">
+        <div id="plan-wrapper" class="absolute origin-top-left will-change-transform">
+          <img id="plan-img" class="block pointer-events-none select-none max-w-none" alt="Rzut kondygnacji" />
+          <div id="pins-layer" class="absolute inset-0 pointer-events-auto"></div>
+        </div>
+
+        <div id="plan-empty-state" class="absolute inset-0 flex flex-col items-center justify-center bg-[#0a0a0a] p-6 text-center z-10">
+          <div class="border border-dashed border-[#333] hover:border-blue-500 p-8 rounded-2xl max-w-md w-full flex flex-col items-center gap-4 bg-[#111]/80 transition-colors">
+            <div class="w-14 h-14 rounded-2xl bg-blue-900/30 border border-blue-600/30 flex items-center justify-center text-blue-400">
+              <i data-lucide="file-up" class="w-7 h-7"></i>
+            </div>
+            <div>
+              <h3 class="font-bold text-base text-white" id="empty-state-title">Brak podkładu roboczego</h3>
+              <p class="text-xs text-gray-400 mt-1">Wgraj rysunek architektoniczny (plik PDF lub JPG/PNG).</p>
+            </div>
+            <button onclick="document.getElementById('plan-file-input').click()" class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-lg shadow-blue-600/25 flex items-center gap-2">
+              <i data-lucide="upload" class="w-4 h-4"></i> Wybierz plik (PDF lub Obraz)
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="absolute bottom-6 right-5 flex flex-col gap-2 z-30 select-none">
+        <input type="file" id="plan-file-input" accept="image/*,application/pdf,.pdf" class="hidden" onchange="handlePlanUploadUniversal(event)">
+        <button onclick="openQuickDefectReport()" title="Drukuj szybki raport usterek" class="w-10 h-10 rounded-xl bg-cyan-600 text-white flex items-center justify-center shadow-lg hover:scale-105 active:scale-95">
+          <i data-lucide="printer" class="w-4 h-4"></i>
+        </button>
+        <button onclick="document.getElementById('plan-file-input').click()" title="Wgraj podkład PDF lub JPG" class="w-10 h-10 rounded-xl bg-[#1b1b1b]/90 backdrop-blur border border-[#333] text-gray-200 hover:text-white flex items-center justify-center shadow-lg active:scale-95">
+          <i data-lucide="folder-open" class="w-4 h-4"></i>
+        </button>
+        <button onclick="fitBlueprintToView()" title="Dopasuj rzut" class="w-10 h-10 rounded-xl bg-[#1b1b1b]/90 backdrop-blur border border-[#333] text-gray-200 hover:text-white flex items-center justify-center shadow-lg active:scale-95">
+          <i data-lucide="focus" class="w-4 h-4"></i>
+        </button>
+        <button onclick="zoomManual(1.25, viewport, scale, planWrapper)" title="Przybliż" class="w-10 h-10 rounded-xl bg-[#1b1b1b]/90 backdrop-blur border border-[#333] text-gray-200 hover:text-white flex items-center justify-center shadow-lg active:scale-95">
+          <i data-lucide="zoom-in" class="w-4 h-4"></i>
+        </button>
+        <button onclick="zoomManual(0.8, viewport, scale, planWrapper)" title="Oddal" class="w-10 h-10 rounded-xl bg-[#1b1b1b]/90 backdrop-blur border border-[#333] text-gray-200 hover:text-white flex items-center justify-center shadow-lg active:scale-95">
+          <i data-lucide="zoom-out" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div class="absolute top-3 left-4 pointer-events-none bg-[#111]/85 backdrop-blur px-3 py-1.5 rounded-lg border border-[#222] text-[11px] text-gray-300 hidden sm:flex items-center gap-2">
+        <i data-lucide="mouse-pointer-click" class="w-3.5 h-3.5 text-blue-400"></i>
+        <span>Dotknij 2 palcami by przybliżać (Pinch-to-zoom) • Kliknij, aby dodać usterkę</span>
+      </div>
+    </div>
+
+    <!-- 3. WIDOK: ZADANIA TO-DO -->
+    <div id="view-todo" class="view-panel w-full h-full hidden overflow-y-auto p-4 sm:p-6 pb-28 md:pb-12 bg-[#0c0c0c]">
+      <div class="max-w-4xl mx-auto space-y-6">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#222] pb-4">
+          <div>
+            <h2 class="text-xl font-black text-white flex items-center gap-2">
+              <i data-lucide="check-square" class="w-6 h-6 text-emerald-500"></i> Zadania & Notatnik To-Do
+            </h2>
+            <p class="text-xs text-gray-400 mt-0.5">Zarządzaj zaopatrzeniem, telefonami i zadaniami pilnymi na budowie.</p>
+          </div>
+
+          <div class="flex items-center gap-1.5 bg-[#171717] p-1 rounded-xl border border-[#262626] overflow-x-auto">
+            <button onclick="setTodoFilter('all')" id="todofilter-all" class="text-xs font-semibold px-2.5 py-1 rounded-lg bg-blue-600 text-white">Wszystkie</button>
+            <button onclick="setTodoFilter('order')" id="todofilter-order" class="text-xs font-semibold px-2.5 py-1 rounded-lg text-gray-400 hover:text-white">📦 Zamówienia</button>
+            <button onclick="setTodoFilter('call')" id="todofilter-call" class="text-xs font-semibold px-2.5 py-1 rounded-lg text-gray-400 hover:text-white">📞 Do kontaktu</button>
+            <button onclick="setTodoFilter('urgent')" id="todofilter-urgent" class="text-xs font-semibold px-2.5 py-1 rounded-lg text-gray-400 hover:text-white">🔥 Pilne</button>
+            <button onclick="setTodoFilter('done')" id="todofilter-done" class="text-xs font-semibold px-2.5 py-1 rounded-lg text-gray-400 hover:text-white">✓ Zrobione</button>
+          </div>
+        </div>
+
+        <div class="bg-[#141414] border border-[#262626] focus-within:border-blue-500 rounded-2xl p-3 shadow-xl transition-all">
+          <div class="flex items-center gap-2 mb-2">
+            <i data-lucide="plus-circle" class="w-5 h-5 text-emerald-500 shrink-0"></i>
+            <input type="text" id="new-todo-title" placeholder="Dodaj zadanie (np. Zamówić 18m3 betonu na czwartek)..." class="w-full bg-transparent text-sm text-white placeholder-gray-500 outline-none">
+          </div>
+          <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#202020] text-xs">
+            <div class="flex flex-wrap items-center gap-2">
+              <select id="new-todo-cat" class="bg-[#1e1e1e] border border-[#333] text-gray-300 rounded-lg px-2 py-1 outline-none">
+                <option value="order">📦 Zamówienie</option>
+                <option value="call">📞 Przypomnienie / Telefon</option>
+                <option value="inspection">🔍 Odbiór / Przegląd</option>
+                <option value="general">📝 Ogólne zadanie</option>
+              </select>
+              <input type="date" id="new-todo-due" class="bg-[#1e1e1e] border border-[#333] text-gray-300 rounded-lg px-2 py-1 outline-none">
+              <input type="text" id="new-todo-who" placeholder="Komu / Wykonawca..." class="bg-[#1e1e1e] border border-[#333] text-gray-300 rounded-lg px-2 py-1 outline-none w-32 sm:w-44">
+              <label class="flex items-center gap-1.5 cursor-pointer text-gray-400 hover:text-white ml-1">
+                <input type="checkbox" id="new-todo-urgent" class="rounded bg-[#222] border-[#333] text-rose-600 focus:ring-0">
+                <span>Pilne</span>
+              </label>
+            </div>
+            <button onclick="addQuickTodo()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-4 py-1.5 rounded-lg shadow-md transition-all active:scale-95">
+              Dodaj zadanie
+            </button>
+          </div>
+        </div>
+
+        <div id="todos-container" class="space-y-2"></div>
+      </div>
+    </div>
+
+    <!-- 4. WIDOK: KALENDARZ & KALENDARIUM -->
+    <div id="view-calendar" class="view-panel w-full h-full hidden overflow-y-auto p-4 sm:p-6 pb-28 md:pb-12 bg-[#0c0c0c]">
+      <div class="max-w-4xl mx-auto space-y-6">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#222] pb-4">
+          <div>
+            <h2 class="text-xl font-black text-white flex items-center gap-2">
+              <i data-lucide="calendar" class="w-6 h-6 text-amber-500"></i> Kalendarz Pracy & Kalendarium Zmian
+            </h2>
+            <p class="text-xs text-gray-400 mt-0.5">Dziennik budowy od pierdół po mocne rzeczy + automatyczny rejestr zmian dzień po dniu.</p>
+          </div>
+          <button onclick="toggleElement('modal-log-entry')" class="bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold px-3.5 py-2 rounded-xl flex items-center gap-2 shadow-lg shadow-amber-600/20">
+            <i data-lucide="plus" class="w-4 h-4"></i> Dodaj wpis do dziennika
+          </button>
+        </div>
+
+        <div class="flex gap-2 border-b border-[#222] pb-2 text-xs font-bold">
+          <button onclick="setCalendarSubTab('schedule')" id="subtab-btn-schedule" class="px-3 py-1.5 rounded-lg bg-[#222] text-amber-400 border border-[#333]">
+            Kalendarz robót i opóźnień (<span id="count-schedule-items">0</span>)
+          </button>
+          <button onclick="setCalendarSubTab('entries')" id="subtab-btn-entries" class="px-3 py-1.5 rounded-lg text-gray-400 hover:text-white">
+            Wpisy Dziennika Budowy (<span id="count-log-entries">0</span>)
+          </button>
+          <button onclick="setCalendarSubTab('audit')" id="subtab-btn-audit" class="px-3 py-1.5 rounded-lg text-gray-400 hover:text-white">
+            Kalendarium zmian dzień po dniu (<span id="count-audit-entries">0</span>)
+          </button>
+        </div>
+
+        <div id="calendar-content-container" class="space-y-3"></div>
+      </div>
+    </div>
+
+    <!-- 5. WIDOK: NORMY & ODBIORY -->
+    <div id="view-norms" class="view-panel w-full h-full hidden overflow-y-auto p-4 sm:p-6 pb-28 md:pb-12 bg-[#0c0c0c]">
+      <div class="max-w-4xl mx-auto space-y-6">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#222] pb-4">
+          <div>
+            <h2 class="text-xl font-black text-white flex items-center gap-2">
+              <i data-lucide="shield-check" class="w-6 h-6 text-purple-500"></i> Normy & Odbiory (Zeszyty ITB)
+            </h2>
+            <p class="text-xs text-gray-400 mt-0.5">Baza wiedzy z tolerancjami, checklista z oznaczeniem „Nice to have” oraz dodawanie własnych norm.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="toggleElement('modal-add-norm-category')" class="bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-md">
+              <i data-lucide="file-plus-2" class="w-3.5 h-3.5"></i> + Dodaj nową normę
+            </button>
+            <button onclick="toggleElement('modal-add-norm')" class="bg-[#1f1f1f] hover:bg-[#2a2a2a] text-purple-300 border border-purple-800/50 text-xs font-semibold px-3 py-1.5 rounded-xl flex items-center gap-1.5">
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i> + Punkt do checklisty
+            </button>
+          </div>
+        </div>
+
+        <div class="flex gap-2 overflow-x-auto pb-1 text-xs font-semibold" id="norms-tabs-bar"></div>
+        <div id="norm-detail-card" class="bg-[#141414] border border-[#282828] rounded-2xl p-5 space-y-4"></div>
+      </div>
+    </div>
+
+    <!-- 6. WIDOK: RAPORT JAKOŚCIOWY RJ-V -->
+    <div id="view-report-rohe" class="view-panel w-full h-full hidden overflow-y-auto p-4 sm:p-6 pb-28 md:pb-12 bg-[#070707] print-panel">
+      <div class="max-w-[920px] mx-auto space-y-5">
+        
+        <div class="no-print bg-[#131313] border border-[#282828] rounded-2xl p-4 sm:p-5 shadow-2xl space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#222] pb-3">
+            <div>
+              <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                <i data-lucide="file-check" class="w-4 h-4 text-rose-500"></i> Oficjalny Raport Jakościowy (RJ-V)
+              </h3>
+              <p class="text-[11px] text-gray-400">Oddzielny rzut PDF/JPG, wykaz wad ogólnych i selekcja zdjęć do wydruku</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <button onclick="toggleElement('rohe-blueprint-manager')" class="bg-[#1e1e1e] hover:bg-[#282828] text-white border border-[#333] text-xs font-semibold px-3 py-2 rounded-xl flex items-center gap-1.5">
+                <i data-lucide="map-pin" class="w-4 h-4 text-amber-400"></i> Otwórz Rzut RJ-V
+              </button>
+              <button onclick="window.print()" class="bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold px-4 py-2 rounded-xl flex items-center gap-2 shadow-lg shadow-rose-600/30">
+                <i data-lucide="printer" class="w-4 h-4"></i> Drukuj / PDF (A4)
+              </button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+            <div>
+              <label class="block text-gray-400 text-[10px] font-bold uppercase mb-1">Nr dokumentu:</label>
+              <input type="text" id="rohe-meta-docnum" value="RJ-B-004-2026" oninput="renderRoheReportPages()" class="w-full bg-[#1b1b1b] border border-[#333] rounded-lg px-2.5 py-1.5 text-white">
+            </div>
+            <div>
+              <label class="block text-gray-400 text-[10px] font-bold uppercase mb-1">Data wystawienia:</label>
+              <input type="text" id="rohe-meta-date" value="09.10.2026" oninput="renderRoheReportPages()" class="w-full bg-[#1b1b1b] border border-[#333] rounded-lg px-2.5 py-1.5 text-white">
+            </div>
+            <div>
+              <label class="block text-gray-400 text-[10px] font-bold uppercase mb-1">Sporządził:</label>
+              <input type="text" id="rohe-meta-author" value="Inżynier Budowy" oninput="renderRoheReportPages()" class="w-full bg-[#1b1b1b] border border-[#333] rounded-lg px-2.5 py-1.5 text-white">
+            </div>
+            <div>
+              <label class="block text-gray-400 text-[10px] font-bold uppercase mb-1">Adresat (Wykonawca):</label>
+              <input type="text" id="rohe-meta-contractor" value="KAEMDE Sp. z o.o." oninput="renderRoheReportPages()" class="w-full bg-[#1b1b1b] border border-[#333] rounded-lg px-2.5 py-1.5 text-white">
+            </div>
+            <div class="sm:col-span-2">
+              <label class="block text-gray-400 text-[10px] font-bold uppercase mb-1">Nazwa projektu:</label>
+              <input type="text" id="rohe-meta-project" value="Inwestycja Mieszkaniowa" oninput="renderRoheReportPages()" class="w-full bg-[#1b1b1b] border border-[#333] rounded-lg px-2.5 py-1.5 text-white">
+            </div>
+            <div class="sm:col-span-2">
+              <label class="block text-gray-400 text-[10px] font-bold uppercase mb-1">Dotyczy:</label>
+              <input type="text" id="rohe-meta-subject" value="Usterki wykazane podczas odbioru stolarki okiennej" oninput="renderRoheReportPages()" class="w-full bg-[#1b1b1b] border border-[#333] rounded-lg px-2.5 py-1.5 text-white">
+            </div>
+            <div>
+              <label class="block text-gray-400 text-[10px] font-bold uppercase mb-1">Branża:</label>
+              <select id="rohe-meta-trade" onchange="renderRoheReportPages()" class="w-full bg-[#1b1b1b] border border-[#333] rounded-lg px-2.5 py-1.5 text-white">
+                <option value="Budowlana" selected>Budowlana</option>
+                <option value="Sanitarna">Sanitarna</option>
+                <option value="Elektryczna">Elektryczna</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-gray-400 text-[10px] font-bold uppercase mb-1">Lokalizacja ogólna:</label>
+              <input type="text" id="rohe-meta-loc" value="Etap 1, Budynek TBA" oninput="renderRoheReportPages()" class="w-full bg-[#1b1b1b] border border-[#333] rounded-lg px-2.5 py-1.5 text-white">
+            </div>
+          </div>
+
+          <div class="pt-3 border-t border-[#222]">
+            <label class="block text-gray-400 text-[10px] font-bold uppercase mb-1">Podstawa normowa odbioru (wpisywana z palca):</label>
+            <input type="text" id="rohe-meta-norms-ref" value="Odbiór wykonano na podstawie wytycznych ITB zeszyt 431/2011 oraz normy PN-EN 14351-1+A2:2016" oninput="renderRoheReportPages()" class="w-full bg-[#1b1b1b] border border-[#333] rounded-lg px-2.5 py-1.5 text-xs text-white">
+          </div>
+
+          <div class="pt-2">
+            <label class="block text-gray-400 text-[10px] font-bold uppercase mb-1">Treść wstępu raportu:</label>
+            <textarea id="rohe-meta-bodytext" rows="2" oninput="renderRoheReportPages()" class="w-full bg-[#1b1b1b] border border-[#333] rounded-lg p-2 text-xs text-white leading-relaxed">GW zwraca uwagę na wady wykryte podczas odbioru stolarki okiennej. Poniżej wykaz uwag ogólnych:</textarea>
+          </div>
+        </div>
+
+        <!-- Menedżer Rzutu RJ-V -->
+        <div id="rohe-blueprint-manager" class="no-print hidden bg-[#141414] border border-[#282828] rounded-2xl p-4 space-y-3 relative">
+          <div class="flex items-center justify-between border-b border-[#222] pb-2">
+            <div class="text-xs font-bold text-white flex items-center gap-2">
+              <i data-lucide="map" class="w-4 h-4 text-rose-500"></i>
+              <span>Rzut Roboczy dla Raportu Jakościowego (RJ-V)</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <input type="file" id="rohe-plan-file-input" accept="image/*,application/pdf,.pdf" class="hidden" onchange="handleRohePlanUploadUniversal(event)">
+              <button onclick="document.getElementById('rohe-plan-file-input').click()" class="bg-blue-600 hover:bg-blue-500 text-white text-xs px-3 py-1.5 rounded-lg flex items-center gap-1">
+                <i data-lucide="upload" class="w-3.5 h-3.5"></i> Wgraj podkład
+              </button>
+              <button onclick="clearRohePins()" class="text-rose-400 hover:text-rose-300 text-xs px-2.5 py-1.5 rounded-lg border border-rose-950 bg-rose-950/30 flex items-center gap-1">
+                <i data-lucide="trash-2" class="w-3 h-3"></i> Wyczyść pinezki RJ-V
+              </button>
+              <button onclick="toggleElement('rohe-blueprint-manager')" class="text-gray-400 hover:text-white p-1">
+                <i data-lucide="x" class="w-4 h-4"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Dodane przyciski zoomu dla widoku RJ-V -->
+          <div class="absolute right-6 top-16 flex flex-col gap-2 z-30">
+            <button onclick="fitRoheBlueprintToView()" class="w-8 h-8 rounded-lg bg-[#1b1b1b]/90 border border-[#333] text-gray-200 flex items-center justify-center shadow-lg"><i data-lucide="focus" class="w-4 h-4"></i></button>
+            <button onclick="zoomManual(1.25, roheViewport, roheScale, rohePlanWrapper)" class="w-8 h-8 rounded-lg bg-[#1b1b1b]/90 border border-[#333] text-gray-200 flex items-center justify-center shadow-lg"><i data-lucide="zoom-in" class="w-4 h-4"></i></button>
+            <button onclick="zoomManual(0.8, roheViewport, roheScale, rohePlanWrapper)" class="w-8 h-8 rounded-lg bg-[#1b1b1b]/90 border border-[#333] text-gray-200 flex items-center justify-center shadow-lg"><i data-lucide="zoom-out" class="w-4 h-4"></i></button>
+          </div>
+
+          <div id="rohe-viewport" class="w-full h-80 relative bg-[#070707] rounded-xl overflow-hidden border border-[#222]">
+            <div id="rohe-plan-wrapper" class="absolute origin-top-left will-change-transform">
+              <img id="rohe-plan-img" class="block pointer-events-none select-none max-w-none" />
+              <div id="rohe-pins-layer" class="absolute inset-0 pointer-events-auto"></div>
+            </div>
+            <div id="rohe-empty-state" class="absolute inset-0 flex flex-col items-center justify-center p-4 text-center">
+              <p class="text-xs text-gray-500">Brak dedykowanego podkładu rzutu dla Raportu Jakościowego. Wgraj plik PDF lub obraz powyżej.</p>
+            </div>
+          </div>
+          <p class="text-[10px] text-gray-400 italic">Pinch-to-zoom 2 palcami aktywny. Kliknij, aby wstawić pinezkę wady z przypisaniem do numeru.</p>
+        </div>
+
+        <div id="rohe-report-container" class="space-y-6"></div>
+      </div>
+    </div>
+
+    <!-- 7. WIDOK: SZYBKI RAPORT ROBOCZY USTEREK (PW) -->
+    <div id="view-quick-report" class="view-panel w-full h-full hidden overflow-y-auto p-4 sm:p-6 pb-28 md:pb-12 bg-[#070707] print-panel">
+      <div class="max-w-[920px] mx-auto space-y-5">
+        <div class="no-print bg-[#131313] border border-[#282828] rounded-2xl p-4 flex items-center justify-between shadow-2xl">
+          <div>
+            <h3 class="text-sm font-bold text-white flex items-center gap-2">
+              <i data-lucide="file-check" class="w-4 h-4 text-cyan-400"></i> Szybki Raport Roboczy Usterek (PW)
+            </h3>
+            <p class="text-[11px] text-gray-400">Układ roboczy: 1 problem na stronę (mapka z jedną pinezką + zdjęcie + opis)</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="switchView('plan')" class="px-3 py-1.5 rounded-xl border border-[#333] text-gray-300 text-xs">Powrót do rzutu</button>
+            <button onclick="window.print()" class="bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold px-4 py-2 rounded-xl flex items-center gap-2 shadow-lg shadow-cyan-600/30">
+              <i data-lucide="printer" class="w-4 h-4"></i> Drukuj / PDF
+            </button>
+          </div>
+        </div>
+
+        <div id="quick-report-container" class="space-y-6"></div>
+      </div>
+    </div>
+
+    <!-- 8. WIDOK: PODGLĄD WYDRUKU KARTY OBMIAROWEJ -->
+    <div id="view-takeoff-print" class="view-panel w-full h-full hidden overflow-y-auto p-4 sm:p-6 pb-28 md:pb-12 bg-[#070707] print-panel">
+      <div class="max-w-[920px] mx-auto space-y-5">
+        <div class="no-print bg-[#131313] border border-[#282828] rounded-2xl p-4 flex items-center justify-between shadow-2xl">
+          <div>
+            <h3 class="text-sm font-bold text-white flex items-center gap-2">
+              <i data-lucide="ruler" class="w-4 h-4 text-emerald-400"></i> Eksport Karty Obmiaru do PDF
+            </h3>
+            <p class="text-[11px] text-gray-400">Czysty zrzut rzutu z liniami wymiarowymi + zestawienie pozycji tabelaryczne</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="openTakeoffModal()" class="px-3 py-1.5 rounded-xl border border-[#333] text-gray-300 text-xs">Powrót do edytora</button>
+            <button onclick="window.print()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 py-2 rounded-xl flex items-center gap-2 shadow-lg shadow-emerald-600/30">
+              <i data-lucide="printer" class="w-4 h-4"></i> Drukuj / Zapisz jako PDF (A4)
+            </button>
+          </div>
+        </div>
+
+        <div id="takeoff-print-container" class="space-y-6"></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- PŁYWAJĄCY HUD NARZĘDZIOWY -->
+  <div id="floating-tools-container" class="no-print fixed bottom-6 left-5 z-40 flex flex-col-reverse items-start gap-3 select-none">
+    <button onclick="toggleQuickToolsMenu()" id="btn-quick-tools" class="w-13 h-13 p-3.5 rounded-full bg-blue-600 hover:bg-blue-500 text-white shadow-2xl shadow-blue-600/50 flex items-center justify-center transition-transform active:scale-95 group">
+      <i data-lucide="wrench" class="w-6 h-6 group-hover:rotate-45 transition-transform duration-300"></i>
+    </button>
+
+    <div id="quick-tools-menu" class="hidden flex flex-col gap-2.5">
+      <button onclick="openCalculatorModal(); toggleQuickToolsMenu();" class="flex items-center gap-2.5 bg-[#1a1a1a]/95 backdrop-blur-md border border-[#333] text-gray-100 px-3.5 py-2 rounded-2xl shadow-xl hover:bg-[#252525] transition-all">
+        <div class="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold">
+          <i data-lucide="calculator" class="w-4 h-4"></i>
+        </div>
+        <div class="text-left">
+          <div class="text-xs font-bold leading-none">Kalkulator inżynierski</div>
+          <div class="text-[10px] text-gray-400">Beton, stal zbrojeniowa, spadki, bloczki</div>
+        </div>
+      </button>
+
+      <button onclick="openTakeoffModal(); toggleQuickToolsMenu();" class="flex items-center gap-2.5 bg-[#1a1a1a]/95 backdrop-blur-md border border-[#333] text-gray-100 px-3.5 py-2 rounded-2xl shadow-xl hover:bg-[#252525] transition-all">
+        <div class="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
+          <i data-lucide="ruler" class="w-4 h-4"></i>
+        </div>
+        <div class="text-left">
+          <div class="text-xs font-bold leading-none">Księga obmiarów & Podkład</div>
+          <div class="text-[10px] text-gray-400">Karty obmiarów + eksport do PDF</div>
+        </div>
+      </button>
+    </div>
+  </div>
+
+  <!-- MODAL: USTERKA NA RZUCIE ROBOCZYM -->
+  <div id="modal-pin" class="modal-backdrop fixed inset-0 bg-black/75 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+    <div class="bg-[#141414] border border-[#2b2b2b] rounded-2xl w-full max-w-md overflow-hidden shadow-2xl flex flex-col">
+      <div class="px-5 py-4 border-b border-[#242424] flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <div id="modal-pin-badge" class="w-7 h-7 rounded-full bg-rose-600 text-white font-black text-xs flex items-center justify-center">1</div>
+          <h3 class="text-sm font-bold text-white">Usterka robocza</h3>
+        </div>
+        <button onclick="closePinModal()" class="text-gray-400 hover:text-white p-1">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div class="p-5 space-y-3.5 text-xs">
+        <div>
+          <label class="block text-gray-400 font-bold mb-1">Treść wady:</label>
+          <textarea id="modal-pin-desc" rows="2" placeholder="np. Skrzydło okienne do regulacji..." class="w-full bg-[#1c1c1c] border border-[#333] rounded-xl p-2.5 text-white outline-none focus:border-blue-500"></textarea>
+        </div>
+
+        <div>
+          <label class="block text-gray-400 font-bold mb-1">Lokalizacja / Osie:</label>
+          <input type="text" id="modal-pin-loc" placeholder="np. Okno O3L w osiach 8-9 B" class="w-full bg-[#1c1c1c] border border-[#333] rounded-xl px-2.5 py-2 text-white outline-none focus:border-blue-500">
+        </div>
+
+        <div>
+          <label class="block text-gray-400 font-bold mb-1">Zdjęcie usterki:</label>
+          <input type="file" id="modal-pin-photo-input" accept="image/*" capture="environment" class="w-full bg-[#1c1c1c] border border-[#333] rounded-xl px-2.5 py-1.5 text-gray-300 text-xs" onchange="handlePinPhotoUpload(event)">
+          <div id="modal-photo-preview-box" class="mt-2 hidden">
+            <img id="modal-photo-preview-img" class="w-full h-36 object-cover rounded-xl border border-[#333]" />
+          </div>
+        </div>
+      </div>
+
+      <div class="px-5 py-3 border-t border-[#242424] bg-[#111] flex items-center justify-between">
+        <button id="modal-pin-btn-delete" onclick="deleteCurrentPin()" class="text-red-400 hover:text-red-300 font-semibold text-xs flex items-center gap-1">
+          <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Usuń usterkę
+        </button>
+        <div class="flex items-center gap-2">
+          <button onclick="closePinModal()" class="px-3.5 py-1.5 rounded-xl border border-[#333] text-gray-300 text-xs hover:bg-[#222]">Anuluj</button>
+          <button onclick="savePinFromModal()" class="px-4 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs shadow-md">Zapisz usterkę</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: DODAWANIE PINEZKI RJ-V -->
+  <div id="modal-rohe-pin" class="modal-backdrop fixed inset-0 bg-black/75 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+    <div class="bg-[#141414] border border-[#2b2b2b] rounded-2xl w-full max-w-md overflow-hidden shadow-2xl flex flex-col">
+      <div class="px-5 py-4 border-b border-[#242424] flex items-center justify-between">
+        <h3 class="text-sm font-bold text-white flex items-center gap-2">
+          <i data-lucide="map-pin" class="w-4 h-4 text-rose-500"></i> Wstaw punkt na Rzucie RJ-V
+        </h3>
+        <button onclick="closeRohePinModal()" class="text-gray-400 hover:text-white p-1">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div class="p-5 space-y-3.5 text-xs">
+        <div class="bg-[#1c1c1c] p-2.5 rounded-xl border border-[#2d2d2d] space-y-2">
+          <label class="block text-gray-300 font-bold">Krok 1: Wybierz sposób opisu usterki (jak na rzucie roboczym)</label>
+          <div class="flex gap-4">
+            <label class="flex items-center gap-1.5 cursor-pointer text-gray-200">
+              <input type="radio" name="rohe-defect-mode" id="rohe-mode-existing" value="existing" checked onchange="toggleRoheDefectMode()" class="text-rose-600 focus:ring-0">
+              <span>Wybierz z dotychczasowych</span>
+            </label>
+            <label class="flex items-center gap-1.5 cursor-pointer text-gray-200">
+              <input type="radio" name="rohe-defect-mode" id="rohe-mode-new" value="new" onchange="toggleRoheDefectMode()" class="text-rose-600 focus:ring-0">
+              <span>Utwórz nowy typ wady</span>
+            </label>
+          </div>
+        </div>
+
+        <div id="rohe-field-existing">
+          <label class="block text-gray-400 font-bold mb-1">Przypisz ten punkt do usterki:</label>
+          <select id="modal-rohe-pin-select-defect" class="w-full bg-[#1c1c1c] border border-[#333] rounded-xl p-2.5 text-white outline-none focus:border-rose-500"></select>
+        </div>
+
+        <div id="rohe-field-new" class="hidden">
+          <label class="block text-gray-400 font-bold mb-1">Treść nowej wady (zostanie dodana do raportu):</label>
+          <input type="text" id="modal-rohe-pin-new-text" placeholder="np. Brak kąta prostego w ościeżnicy" class="w-full bg-[#1c1c1c] border border-[#333] rounded-xl px-2.5 py-2 text-white outline-none focus:border-rose-500">
+        </div>
+
+        <div>
+          <label class="block text-gray-400 font-bold mb-1">Lokalizacja szczegółowa (podpis pod zdjęciem):</label>
+          <input type="text" id="modal-rohe-pin-loc" placeholder="np. Budynek TBA, Parter, Pom. 0.12" class="w-full bg-[#1c1c1c] border border-[#333] rounded-xl px-2.5 py-2 text-white outline-none focus:border-rose-500">
+        </div>
+
+        <div>
+          <label class="block text-gray-400 font-bold mb-1">Zdjęcie przykładu usterki (pojawią się w raporcie):</label>
+          <input type="file" id="modal-rohe-photo-input" accept="image/*" capture="environment" class="w-full bg-[#1c1c1c] border border-[#333] rounded-xl px-2.5 py-1.5 text-gray-300 text-xs" onchange="handleRohePinPhotoUpload(event)">
+          <div id="modal-rohe-photo-preview-box" class="mt-2 hidden">
+            <img id="modal-rohe-photo-preview-img" class="w-full h-36 object-cover rounded-xl border border-[#333]" />
+          </div>
+        </div>
+      </div>
+
+      <div class="px-5 py-3 border-t border-[#242424] bg-[#111] flex justify-end gap-2">
+        <button onclick="closeRohePinModal()" class="px-3.5 py-1.5 rounded-xl border border-[#333] text-gray-300 text-xs">Anuluj</button>
+        <button onclick="saveRohePinFromModal()" class="px-4 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs shadow-md">Wstaw na rzut RJ-V</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: DODAWANIE CAŁEJ NOWEJ NORMY -->
+  <div id="modal-add-norm-category" class="modal-backdrop fixed inset-0 bg-black/75 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+    <div class="bg-[#141414] border border-[#2b2b2b] rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
+      <div class="px-5 py-4 border-b border-[#222] flex items-center justify-between">
+        <h3 class="text-sm font-bold text-white flex items-center gap-2">
+          <i data-lucide="file-plus-2" class="w-4 h-4 text-purple-400"></i> Dodaj Nową Normę do Bazy
+        </h3>
+        <button onclick="toggleElement('modal-add-norm-category')" class="text-gray-400 hover:text-white">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+      <div class="p-5 space-y-3 text-xs">
+        <div>
+          <label class="block text-gray-400 font-bold mb-1">Krótka nazwa zakładki (np. Elewacje ETICS):</label>
+          <input type="text" id="new-norm-short" placeholder="np. Elewacje ETICS" class="w-full bg-[#1b1b1b] border border-[#333] rounded-lg p-2 text-white">
+        </div>
+        <div>
+          <label class="block text-gray-400 font-bold mb-1">Pełny tytuł normy / wytycznych ITB:</label>
+          <input type="text" id="new-norm-title" placeholder="np. Ocieplenia ścian zewnętrznych ETICS (ITB 447/2009)" class="w-full bg-[#1b1b1b] border border-[#333] rounded-lg p-2 text-white">
+        </div>
+        <div>
+          <label class="block text-gray-400 font-bold mb-1">Główne tolerancje normowe (po jednej w linii):</label>
+          <textarea id="new-norm-guidelines" rows="3" placeholder="Odchyłka od płaszczyzny max 2mm/2m&#10;Głębokość kołkowania min. 5cm" class="w-full bg-[#1b1b1b] border border-[#333] rounded-lg p-2 text-white"></textarea>
+        </div>
+      </div>
+      <div class="px-5 py-3 border-t border-[#222] bg-[#111] flex justify-end gap-2">
+        <button onclick="toggleElement('modal-add-norm-category')" class="px-3.5 py-1.5 rounded-lg border border-[#333] text-gray-300 text-xs">Anuluj</button>
+        <button onclick="saveNewNormCategory()" class="px-4 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs">Utwórz normę</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: DODAWANIE WŁASNEJ POZYCJI DO CHECKLISTY -->
+  <div id="modal-add-norm" class="modal-backdrop fixed inset-0 bg-black/75 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+    <div class="bg-[#141414] border border-[#2b2b2b] rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
+      <div class="px-5 py-4 border-b border-[#222] flex items-center justify-between">
+        <h3 class="text-sm font-bold text-white flex items-center gap-2">
+          <i data-lucide="plus-circle" class="w-4 h-4 text-purple-400"></i> Dodaj punkt odbiorowy
+        </h3>
+        <button onclick="toggleElement('modal-add-norm')" class="text-gray-400 hover:text-white">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+      <div class="p-5 space-y-3 text-xs">
+        <div>
+          <label class="block text-gray-400 font-bold mb-1">Wybierz normę:</label>
+          <select id="custom-norm-cat" class="w-full bg-[#1b1b1b] border border-[#333] rounded-lg p-2 text-white"></select>
+        </div>
+        <div>
+          <label class="block text-gray-400 font-bold mb-1">Treść punktu kontrolnego:</label>
+          <input type="text" id="custom-norm-text" placeholder="np. Sprawdzenie estetyki uszczelnienia pod parapetem" class="w-full bg-[#1b1b1b] border border-[#333] rounded-lg p-2 text-white">
+        </div>
+        <div class="bg-[#1b1b1b] p-3 rounded-xl border border-[#2c2c2c]">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" id="custom-norm-nicetohave" class="w-4 h-4 rounded bg-[#111] border-[#444] text-purple-600 focus:ring-0">
+            <span class="text-xs font-semibold text-purple-300">Oznacz jako „NICE TO HAVE” (własna uwaga bez normy ITB)</span>
+          </label>
+        </div>
+      </div>
+      <div class="px-5 py-3 border-t border-[#222] bg-[#111] flex justify-end gap-2">
+        <button onclick="toggleElement('modal-add-norm')" class="px-3.5 py-1.5 rounded-lg border border-[#333] text-gray-300 text-xs">Anuluj</button>
+        <button onclick="saveCustomNormItem()" class="px-4 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs">Dodaj punkt</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: DZIENNIK BUDOWY -->
+  <div id="modal-log-entry" class="modal-backdrop fixed inset-0 bg-black/75 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+    <div class="bg-[#141414] border border-[#2b2b2b] rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
+      <div class="px-5 py-4 border-b border-[#222] flex items-center justify-between">
+        <h3 class="text-sm font-bold text-white flex items-center gap-2">
+          <i data-lucide="edit-3" class="w-4 h-4 text-amber-500"></i> Wpis do Dziennika Budowy
+        </h3>
+        <button onclick="toggleElement('modal-log-entry')" class="text-gray-400 hover:text-white">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+      <div class="p-5 space-y-3 text-xs">
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-gray-400 font-bold mb-1">Data:</label>
+            <input type="date" id="log-entry-date" class="w-full bg-[#1b1b1b] border border-[#333] rounded-lg p-2 text-white">
+          </div>
+          <div>
+            <label class="block text-gray-400 font-bold mb-1">Pogoda / Warunki:</label>
+            <input type="text" id="log-entry-weather" placeholder="np. Słonecznie, +16°C" class="w-full bg-[#1b1b1b] border border-[#333] rounded-lg p-2 text-white">
+          </div>
+        </div>
+        <div>
+          <label class="block text-gray-400 font-bold mb-1">Pracownicy / Brygady:</label>
+          <input type="text" id="log-entry-workers" placeholder="np. 4 montażystów okien, 2 tynkarzy" class="w-full bg-[#1b1b1b] border border-[#333] rounded-lg p-2 text-white">
+        </div>
+        <div>
+          <label class="block text-gray-400 font-bold mb-1">Treść wpisu:</label>
+          <textarea id="log-entry-text" rows="4" placeholder="Opis prac, dostawy, kontrole zbrojenia..." class="w-full bg-[#1b1b1b] border border-[#333] rounded-lg p-2.5 text-white"></textarea>
+        </div>
+      </div>
+      <div class="px-5 py-3 border-t border-[#222] bg-[#111] flex justify-end gap-2">
+        <button onclick="toggleElement('modal-log-entry')" class="px-3.5 py-1.5 rounded-lg border border-[#333] text-gray-300 text-xs">Anuluj</button>
+        <button onclick="saveLogbookEntry()" class="px-4 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs">Zatwierdź wpis</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: KALKULATOR -->
+  <div id="modal-calculator" class="modal-backdrop fixed inset-0 bg-black/75 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+    <div class="bg-[#151515] border border-[#2b2b2b] rounded-2xl w-full max-w-md overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+      <div class="px-4 py-3 bg-[#111] border-b border-[#242424] flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-2 text-xs font-bold text-white">
+          <i data-lucide="calculator" class="w-4 h-4 text-amber-500"></i>
+          <span>Kalkulator Inżynierski</span>
+        </div>
+        <button onclick="toggleElement('modal-calculator')" class="text-gray-400 hover:text-white">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div class="flex border-b border-[#242424] text-[11px] font-semibold overflow-x-auto shrink-0">
+        <button onclick="setCalcTab('standard')" id="calctab-standard" class="flex-1 py-2 px-3 text-center text-amber-400 border-b-2 border-amber-500 bg-[#1b1b1b] whitespace-nowrap">Standardowy</button>
+        <button onclick="setCalcTab('concrete')" id="calctab-concrete" class="flex-1 py-2 px-3 text-center text-gray-400 hover:text-white whitespace-nowrap">Beton & Gruszki</button>
+        <button onclick="setCalcTab('steel')" id="calctab-steel" class="flex-1 py-2 px-3 text-center text-gray-400 hover:text-white whitespace-nowrap">Stal zbrojeniowa</button>
+        <button onclick="setCalcTab('slopes')" id="calctab-slopes" class="flex-1 py-2 px-3 text-center text-gray-400 hover:text-white whitespace-nowrap">Spadki & Mury</button>
+      </div>
+
+      <div class="overflow-y-auto p-4 flex-1">
+        <div id="calc-panel-standard" class="space-y-3">
+          <div class="bg-[#0b0b0b] border border-[#262626] rounded-xl p-3 text-right">
+            <div id="calc-history" class="text-[11px] text-gray-500 h-4 font-mono overflow-hidden"></div>
+            <div id="calc-display" class="text-2xl font-black text-white font-mono tracking-tight mt-1 overflow-x-auto">0</div>
+          </div>
+
+          <div class="grid grid-cols-4 gap-2 text-sm font-semibold select-none">
+            <button onclick="calcPress('C')" class="p-3 bg-[#242424] text-red-400 rounded-xl">C</button>
+            <button onclick="calcPress('(')" class="p-3 bg-[#202020] text-gray-300 rounded-xl">(</button>
+            <button onclick="calcPress(')')" class="p-3 bg-[#202020] text-gray-300 rounded-xl">)</button>
+            <button onclick="calcPress('/')" class="p-3 bg-amber-600/30 text-amber-400 rounded-xl">÷</button>
+
+            <button onclick="calcPress('7')" class="p-3 bg-[#1a1a1a] text-white rounded-xl">7</button>
+            <button onclick="calcPress('8')" class="p-3 bg-[#1a1a1a] text-white rounded-xl">8</button>
+            <button onclick="calcPress('9')" class="p-3 bg-[#1a1a1a] text-white rounded-xl">9</button>
+            <button onclick="calcPress('*')" class="p-3 bg-amber-600/30 text-amber-400 rounded-xl">×</button>
+
+            <button onclick="calcPress('4')" class="p-3 bg-[#1a1a1a] text-white rounded-xl">4</button>
+            <button onclick="calcPress('5')" class="p-3 bg-[#1a1a1a] text-white rounded-xl">5</button>
+            <button onclick="calcPress('6')" class="p-3 bg-[#1a1a1a] text-white rounded-xl">6</button>
+            <button onclick="calcPress('-')" class="p-3 bg-amber-600/30 text-amber-400 rounded-xl">−</button>
+
+            <button onclick="calcPress('1')" class="p-3 bg-[#1a1a1a] text-white rounded-xl">1</button>
+            <button onclick="calcPress('2')" class="p-3 bg-[#1a1a1a] text-white rounded-xl">2</button>
+            <button onclick="calcPress('3')" class="p-3 bg-[#1a1a1a] text-white rounded-xl">3</button>
+            <button onclick="calcPress('+')" class="p-3 bg-amber-600/30 text-amber-400 rounded-xl">+</button>
+
+            <button onclick="calcPress('0')" class="p-3 bg-[#1a1a1a] text-white rounded-xl col-span-2">0</button>
+            <button onclick="calcPress('.')" class="p-3 bg-[#1a1a1a] text-white rounded-xl">.</button>
+            <button onclick="calcPress('=')" class="p-3 bg-amber-500 text-black font-black rounded-xl">=</button>
+          </div>
+        </div>
+
+        <div id="calc-panel-concrete" class="space-y-3 text-xs hidden">
+          <div class="bg-[#1c1c1c] p-3.5 rounded-xl border border-[#2d2d2d] space-y-2.5">
+            <span class="font-bold text-amber-400 block">Objętość płyty / ławy / stropu:</span>
+            <div class="grid grid-cols-3 gap-2">
+              <input type="number" id="calc-c-l" placeholder="Dł. (m)" step="0.1" class="w-full bg-[#111] p-1.5 rounded border border-[#333] text-white">
+              <input type="number" id="calc-c-w" placeholder="Szer. (m)" step="0.1" class="w-full bg-[#111] p-1.5 rounded border border-[#333] text-white">
+              <input type="number" id="calc-c-h" placeholder="Grub. (m)" step="0.01" class="w-full bg-[#111] p-1.5 rounded border border-[#333] text-white">
+            </div>
+            <button onclick="computeConcrete()" class="w-full py-2 bg-amber-600 hover:bg-amber-500 text-white font-semibold rounded-lg">Oblicz beton</button>
+            <div id="calc-c-result" class="text-gray-200 font-mono text-xs pt-1"></div>
+          </div>
+        </div>
+
+        <div id="calc-panel-steel" class="space-y-3 text-xs hidden">
+          <div class="bg-[#1c1c1c] p-3.5 rounded-xl border border-[#2d2d2d] space-y-2.5">
+            <span class="font-bold text-blue-400 block">Waga prętów zbrojeniowych (kg):</span>
+            <div class="grid grid-cols-2 gap-2">
+              <select id="calc-steel-fi" class="w-full bg-[#111] p-1.5 rounded border border-[#333] text-white text-xs">
+                <option value="0.222">fi 6 mm</option>
+                <option value="0.395">fi 8 mm</option>
+                <option value="0.617">fi 10 mm</option>
+                <option value="0.888" selected>fi 12 mm</option>
+                <option value="1.578">fi 16 mm</option>
+                <option value="2.466">fi 20 mm</option>
+              </select>
+              <input type="number" id="calc-steel-len" placeholder="Długość (m)" class="w-full bg-[#111] p-1.5 rounded border border-[#333] text-white">
+            </div>
+            <button onclick="computeSteelWeight()" class="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg">Oblicz wagę stali</button>
+            <div id="calc-steel-result" class="text-gray-200 font-mono text-xs pt-1"></div>
+          </div>
+        </div>
+
+        <div id="calc-panel-slopes" class="space-y-3 text-xs hidden">
+          <div class="bg-[#1c1c1c] p-3 rounded-xl border border-[#2d2d2d] space-y-2">
+            <span class="font-bold text-emerald-400 block">Różnica wysokości ze spadku:</span>
+            <div class="grid grid-cols-2 gap-2">
+              <input type="number" id="calc-slope-dist" placeholder="Długość (m)" class="w-full bg-[#111] p-1.5 rounded border border-[#333] text-white">
+              <input type="number" id="calc-slope-pct" placeholder="Spadek w %" class="w-full bg-[#111] p-1.5 rounded border border-[#333] text-white">
+            </div>
+            <button onclick="computeSlopeDiff()" class="w-full py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-lg">Przelicz różnicę wysokości</button>
+            <div id="calc-slope-result" class="text-gray-200 font-mono text-xs pt-1"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: ZAAWANSOWANA KSIĘGA OBMIARÓW (TAKEOFF) -->
+  <div id="modal-takeoff" class="modal-backdrop fixed inset-0 bg-black/85 backdrop-blur-md z-50 hidden flex-col">
+    <div class="px-4 py-2.5 bg-[#121212] border-b border-[#252525] flex items-center justify-between shrink-0">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-emerald-600 flex items-center justify-center text-white font-bold">
+          <i data-lucide="ruler" class="w-4 h-4"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h3 class="text-xs sm:text-sm font-bold text-white" id="takeoff-active-title">Obmiar bez nazwy</h3>
+            <button onclick="promptRenameActiveTakeoff()" class="text-gray-400 hover:text-white" title="Zmień nazwę karty obmiarowej"><i data-lucide="edit" class="w-3 h-3"></i></button>
+          </div>
+          <p class="text-[10px] text-gray-400">Podkład czarno-biały (PDF / Obraz) + precyzyjne punkty z natury</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 text-xs">
+        <button onclick="promptCreateNewTakeoffSession()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded-lg font-semibold flex items-center gap-1">
+          <i data-lucide="plus" class="w-3.5 h-3.5"></i> Nowy obmiar
+        </button>
+        <button onclick="openTakeoffPrintPreview()" class="bg-[#1f1f1f] hover:bg-[#2b2b2b] text-emerald-400 border border-emerald-800/60 px-2.5 py-1 rounded-lg flex items-center gap-1 font-semibold">
+          <i data-lucide="printer" class="w-3.5 h-3.5"></i> PDF / Drukuj Kartę
+        </button>
+        <button onclick="exportTakeoffCSV()" class="bg-[#1a1a1a] hover:bg-[#252525] text-white border border-[#333] px-2.5 py-1 rounded-lg flex items-center gap-1 hidden md:flex">
+          <i data-lucide="download" class="w-3 h-3 text-emerald-400"></i> CSV
+        </button>
+        <button onclick="closeTakeoffModal()" class="text-gray-400 hover:text-white p-1 ml-2 border-l border-[#333] pl-2">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+    </div>
+
+    <div class="flex-1 flex flex-col md:flex-row overflow-hidden">
+      <!-- Lewy panel: Zapisane Karty Obmiarów -->
+      <div class="w-full md:w-64 bg-[#0e0e0e] border-b md:border-b-0 md:border-r border-[#222] flex flex-col shrink-0">
+        <div class="p-2.5 border-b border-[#222] bg-[#141414] flex items-center justify-between">
+          <span class="text-xs font-bold text-gray-300 flex items-center gap-1.5">
+            <i data-lucide="folder" class="w-3.5 h-3.5 text-amber-400"></i> Karty Obmiarowe
+          </span>
+          <span class="text-[10px] text-gray-500 font-mono" id="takeoff-sessions-count">0</span>
+        </div>
+        <div id="takeoff-sessions-list" class="flex-1 overflow-y-auto p-2 space-y-1.5 text-xs"></div>
+      </div>
+
+      <!-- Środkowy panel: Podkład z pełną obsługą zoomu dwoma palcami -->
+      <div class="flex-1 relative bg-[#060606] overflow-hidden flex items-center justify-center border-b md:border-b-0 md:border-r border-[#222]">
+        <div class="absolute top-2 left-2 z-20 flex flex-wrap items-center gap-1.5 bg-[#141414]/90 backdrop-blur border border-[#333] p-1.5 rounded-xl text-xs max-w-[90%]">
+          <label class="flex items-center gap-1 text-gray-300 hover:text-white px-2 py-0.5 rounded cursor-pointer">
+            <i data-lucide="upload" class="w-3 h-3 text-blue-400"></i> Wgraj podkład
+            <input type="file" id="takeoff-file-input" accept="image/*,application/pdf,.pdf" class="hidden" onchange="handleTakeoffBlueprintUploadUniversal(event)">
+          </label>
+          <button onclick="useCurrentFloorAsTakeoff()" class="text-gray-300 hover:text-white px-2 py-0.5 rounded border border-[#2e2e2e]">
+            Rzut piętra
+          </button>
+          <button onclick="clearCurrentTakeoffLines()" class="text-rose-400 hover:text-rose-300 px-2 py-0.5 rounded border border-rose-950 bg-rose-950/20">
+            Wyczyść
+          </button>
+          <div class="h-3 w-[1px] bg-[#333] mx-1 hidden sm:block"></div>
+          <span class="text-[10px] text-gray-500 hidden sm:block">Widoczność:</span>
+          <button onclick="setTakeoffOpacity(0.5)" class="px-1.5 py-0.5 rounded text-[10px] bg-[#222] text-gray-300 hover:bg-[#333] hidden sm:block">50%</button>
+          <button onclick="setTakeoffOpacity(1.0)" class="px-1.5 py-0.5 rounded text-[10px] bg-[#222] text-gray-300 hover:bg-[#333] hidden sm:block">100%</button>
+        </div>
+        
+        <!-- Dodane przyciski zoomu dla obmiarów -->
+        <div class="absolute right-2 top-14 flex flex-col gap-2 z-30">
+          <button onclick="fitTakeoffBlueprintToView()" class="w-8 h-8 rounded-lg bg-[#1b1b1b]/90 border border-[#333] text-gray-200 flex items-center justify-center shadow-lg"><i data-lucide="focus" class="w-4 h-4"></i></button>
+          <button onclick="zoomManual(1.25, takeoffViewport, takeoffScale, takeoffDrawingContainer)" class="w-8 h-8 rounded-lg bg-[#1b1b1b]/90 border border-[#333] text-gray-200 flex items-center justify-center shadow-lg"><i data-lucide="zoom-in" class="w-4 h-4"></i></button>
+          <button onclick="zoomManual(0.8, takeoffViewport, takeoffScale, takeoffDrawingContainer)" class="w-8 h-8 rounded-lg bg-[#1b1b1b]/90 border border-[#333] text-gray-200 flex items-center justify-center shadow-lg"><i data-lucide="zoom-out" class="w-4 h-4"></i></button>
+        </div>
+
+        <div id="takeoff-viewport" class="w-full h-full relative overflow-hidden bg-[#060606]">
+          <div id="takeoff-drawing-container" class="absolute origin-top-left will-change-transform">
+            <img id="takeoff-img" class="block pointer-events-none select-none max-w-none transition-opacity" style="filter: grayscale(100%) contrast(140%); opacity: 0.75;" />
+            <svg id="takeoff-svg-layer" class="absolute inset-0 w-full h-full cursor-crosshair pointer-events-auto"></svg>
+          </div>
+        </div>
+
+        <div id="takeoff-empty" class="absolute inset-0 flex flex-col items-center justify-center p-6 text-center pointer-events-none">
+          <div class="border border-dashed border-[#333] p-6 rounded-2xl max-w-xs flex flex-col items-center gap-3 bg-[#111]/80 pointer-events-auto">
+            <i data-lucide="maximize-2" class="w-8 h-8 text-emerald-400"></i>
+            <p class="text-xs text-gray-400">Brak podkładu dla tej karty. Wgraj plik PDF lub obraz.</p>
+            <button onclick="useCurrentFloorAsTakeoff()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg">
+              Wczytaj rzut aktywnego piętra
+            </button>
+          </div>
+        </div>
+
+        <div class="absolute bottom-3 left-3 bg-[#111]/90 backdrop-blur border border-[#2b2b2b] px-3 py-1.5 rounded-lg text-[11px] text-gray-300 pointer-events-none flex items-center gap-2 max-w-[80%]">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+          <span id="takeoff-status-msg" class="truncate">Kliknij punkt A, następnie punkt B, aby wstawić odcinek</span>
+        </div>
+      </div>
+
+      <!-- Prawy panel: Rejestr pozycji -->
+      <div class="w-full md:w-80 bg-[#111] flex flex-col shrink-0 overflow-hidden h-64 md:h-auto border-t md:border-t-0 border-[#222]">
+        <div class="p-3 border-b border-[#222] bg-[#161616] flex items-center justify-between">
+          <span class="text-xs font-bold text-gray-200">Rejestr pozycji</span>
+          <div class="flex gap-2 text-xs">
+            <span class="bg-[#222] px-2 py-0.5 rounded text-emerald-400 font-mono font-bold" id="takeoff-sum-mb">0.00 mb</span>
+            <span class="bg-[#222] px-2 py-0.5 rounded text-blue-400 font-mono font-bold" id="takeoff-sum-m2">0.00 m²</span>
+          </div>
+        </div>
+
+        <div class="p-2.5 border-b border-[#222] bg-[#141414] grid grid-cols-4 gap-1.5 text-xs">
+          <input type="text" id="takeoff-input-desc" placeholder="Nagłówek / Opis" class="col-span-2 bg-[#1c1c1c] border border-[#333] rounded px-2 py-1 text-white text-[11px]">
+          <input type="number" id="takeoff-input-val" placeholder="Wartość" step="0.01" class="bg-[#1c1c1c] border border-[#333] rounded px-2 py-1 text-white text-[11px]">
+          <select id="takeoff-input-unit" class="bg-[#1c1c1c] border border-[#333] rounded px-1 py-1 text-white text-[11px]">
+            <option value="mb">mb</option>
+            <option value="m2">m²</option>
+          </select>
+          <button onclick="addManualTakeoffRow()" class="col-span-4 mt-1 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-1 rounded text-xs">
+            + Dodaj pozycję do sumy
+          </button>
+        </div>
+
+        <div id="takeoff-items-list" class="flex-1 overflow-y-auto p-2 space-y-1.5 text-xs"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Nowe, bardziej profesjonalne logo zintegrowane w SVG przypominające logo ROHE z PDF
+    const ROHE_LOGO_SVG = `
+      <svg class="w-32 h-auto" viewBox="0 0 200 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="200" height="50" fill="white"/>
+        <text x="10" y="38" font-family="Arial, sans-serif" font-weight="900" font-size="42" fill="#000000" letter-spacing="-2">ROHE</text>
+        <path d="M120 15 L190 15 L190 35 L120 35 Z" fill="#e11d48" opacity="0.1"/>
+        <text x="125" y="30" font-family="Arial, sans-serif" font-weight="bold" font-size="12" fill="#e11d48">QUALITY</text>
+      </svg>
+    `;
+
+    /* ========================================================= */
+    /* PWA SERVICE WORKER INLINE & INSTALACJA                    */
+    /* ========================================================= */
+    if ('serviceWorker' in navigator) {
+      // Prosty Service Worker do buforowania strony dla pełnego wsparcia PWA/Offline
+      const swCode = `
+        const CACHE_NAME = 'inspektor-budowy-v2';
+        self.addEventListener('install', e => {
+          self.skipWaiting();
+        });
+        self.addEventListener('fetch', e => {
+          // Fallback, odpowiada 200 na główne żądanie co pozwala zainstalować PWA
+        });
+      `;
+      const blob = new Blob([swCode], { type: 'application/javascript' });
+      navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(console.warn);
+    }
+
+    let deferredPrompt = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+    });
+
+    /* ========================================================= */
+    /* SILNIK PDF.JS (RENDEROWANIE PDF DO CANVAS / OBRAZU)      */
+    /* ========================================================= */
+    if (window.pdfjsLib) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+
+    function renderPdfToDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const fileReader = new FileReader();
+        fileReader.onload = async function() {
+          try {
+            const typedArray = new Uint8Array(this.result);
+            const pdf = await pdfjsLib.getDocument(typedArray).promise;
+            const page = await pdf.getPage(1);
+            const viewport = page.getViewport({ scale: 2.0 });
+
+            const canvas = document.createElement('canvas');
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            const ctx = canvas.getContext('2d');
+
+            await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+            resolve(canvas.toDataURL('image/jpeg', 0.9));
+          } catch (err) {
+            reject(err);
+          }
+        };
+        fileReader.onerror = reject;
+        fileReader.readAsArrayBuffer(file);
+      });
+    }
+
+    /* ========================================================= */
+    /* SILNIK INDEXEDDB                                          */
+    /* ========================================================= */
+    const DB_NAME = 'InspektorBudowyProDB_v5';
+    const DB_VERSION = 1;
+    const DB_STORE = 'app_state_store';
+    const STATE_KEY = 'project_data_payload';
+
+    function initIndexedDB() {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME, DB_VERSION);
+        req.onupgradeneeded = (e) => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains(DB_STORE)) {
+            db.createObjectStore(DB_STORE);
+          }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function saveToDB(state) {
+      try {
+        const db = await initIndexedDB();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction(DB_STORE, 'readwrite');
+          const store = tx.objectStore(DB_STORE);
+          store.put(state, STATE_KEY);
+          tx.oncomplete = () => {
+            const syncEl = document.getElementById('sync-status');
+            if (syncEl) {
+              syncEl.classList.remove('hidden');
+              setTimeout(() => syncEl.classList.add('hidden'), 1500);
+            }
+            resolve();
+          };
+          tx.onerror = () => reject(tx.error);
+        });
+      } catch (err) {
+        console.error('Błąd zapisu do IndexedDB:', err);
+      }
+    }
+
+    async function loadFromDB() {
+      try {
+        const db = await initIndexedDB();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction(DB_STORE, 'readonly');
+          const store = tx.objectStore(DB_STORE);
+          const req = store.get(STATE_KEY);
+          req.onsuccess = () => resolve(req.result || null);
+          req.onerror = () => reject(req.error);
+        });
+      } catch (err) {
+        console.error('Błąd odczytu z IndexedDB:', err);
+        return null;
+      }
+    }
+
+    /* ========================================================= */
+    /* STAN APLIKACJI & NAWIGACJA WSTECZ (HISTORY API)           */
+    /* ========================================================= */
+    let appState = {
+      project: {
+        name: 'Inwestycja Budowlana',
+        contractor: 'KAEMDE Sp. z o.o.',
+        docNum: 'RJ-B-004-2026',
+        date: new Date().toLocaleDateString('pl-PL')
+      },
+      currentBuildingId: 'b-1',
+      buildings: [
+        {
+          id: 'b-1',
+          name: 'Budynek A',
+          currentFloorId: 'b1-f0',
+          floors: [
+            { id: 'b1-f0', name: 'Parter', blueprint: null, pins: [] },
+            { id: 'b1-f1', name: '1. Piętro', blueprint: null, pins: [] }
+          ]
+        }
+      ],
+      roheReport: {
+        blueprint: null,
+        defectTypes: [
+          { id: 'dt-1', num: 1, text: 'Źle zasilikonowane okno' },
+          { id: 'dt-2', num: 2, text: 'Za krótka uszczelka skrzydła' }
+        ],
+        pins: []
+      },
+      takeoffBook: {
+        activeSessionId: 'tk-1',
+        sessions: [
+          {
+            id: 'tk-1',
+            title: 'Karta Obmiarowa 1',
+            date: new Date().toLocaleDateString('pl-PL'),
+            blueprint: null,
+            items: [],
+            lines: []
+          }
+        ]
+      },
+      todos: [],
+      calendarSchedule: [],
+      logEntries: [],
+      auditTrail: [],
+      customNormChecklist: [],
+      customNormCategories: []
+    };
+
+    let navigationStack = ['dashboard'];
+    let selectedPinId = null;
+    let tempPinUploadPhoto = null;
+    let tempRohePinUploadPhoto = null;
+    let todoFilter = 'all';
+    let calendarSubTab = 'schedule';
+
+    // Rzut Roboczy Zoom/Pan
+    let scale = 1, panX = 0, panY = 0;
+    // Rzut RJ-V Zoom/Pan
+    let roheScale = 1, rohePanX = 0, rohePanY = 0;
+    // Rzut Obmiary Zoom/Pan
+    let takeoffScale = 1, takeoffPanX = 0, takeoffPanY = 0;
+
+    const viewport = document.getElementById('viewport');
+    const planWrapper = document.getElementById('plan-wrapper');
+    const planImg = document.getElementById('plan-img');
+    const pinsLayer = document.getElementById('pins-layer');
+    const planEmptyState = document.getElementById('plan-empty-state');
+
+    const roheViewport = document.getElementById('rohe-viewport');
+    const rohePlanWrapper = document.getElementById('rohe-plan-wrapper');
+    const rohePlanImg = document.getElementById('rohe-plan-img');
+    const rohePinsLayer = document.getElementById('rohe-pins-layer');
+    const roheEmptyState = document.getElementById('rohe-empty-state');
+
+    const takeoffViewport = document.getElementById('takeoff-viewport');
+    const takeoffDrawingContainer = document.getElementById('takeoff-drawing-container');
+    const takeoffImg = document.getElementById('takeoff-img');
+    const takeoffSvgLayer = document.getElementById('takeoff-svg-layer');
+    const takeoffEmpty = document.getElementById('takeoff-empty');
+
+    /* INTEGRACJA Z PRZYCISKIEM WSTECZ TELEFONU */
+    window.addEventListener('popstate', (e) => {
+      // 1. Jeśli otwarty jest jakiś modal, zamykamy go, ale blokujemy domyślne cofnięcie
+      const openModals = document.querySelectorAll('.modal-backdrop:not(.hidden)');
+      if (openModals.length > 0) {
+        openModals.forEach(m => { m.classList.add('hidden'); m.classList.remove('flex'); });
+        history.pushState(null, ''); // przywracamy stan żeby nie wyjść z apki
+        return;
+      }
+
+      // 2. Obsługa nawigacji między zakładkami
+      if (e.state && e.state.view) {
+        switchView(e.state.view, false);
+      } else {
+        switchView('dashboard', false);
+      }
+    });
+
+    function handleAppBack() {
+      // To obsługuje fizyczny przycisk w lewym górnym rogu
+      const openModals = document.querySelectorAll('.modal-backdrop:not(.hidden)');
+      if (openModals.length > 0) {
+        openModals.forEach(m => { m.classList.add('hidden'); m.classList.remove('flex'); });
+        return;
+      }
+      history.back(); // to odpali event 'popstate'
+    }
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      // Inicjalizacja stosu nawigacji dla PWA/Androida
+      window.history.replaceState({ view: 'dashboard' }, '');
+
+      const stored = await loadFromDB();
+      if (stored) {
+        appState = { ...appState, ...stored };
+      }
+
+      renderStructureSubbar();
+      loadFloor(getCurrentFloor().id);
+      
+      // Bindowanie uniwersalnego zoomu
+      setupUniversalPanZoom(viewport, planWrapper, (s, x, y) => { scale = s; panX = x; panY = y; });
+      setupUniversalPanZoom(roheViewport, rohePlanWrapper, (s, x, y) => { roheScale = s; rohePanX = x; rohePanY = y; });
+      setupUniversalPanZoom(takeoffViewport, takeoffDrawingContainer, (s, x, y) => { takeoffScale = s; takeoffPanX = x; takeoffPanY = y; });
+
+      setupBlueprintClick();
+      setupRoheBlueprintClick();
+      setupTakeoffSvgInteraction();
+
+      renderTodos();
+      renderCalendar();
+      renderNormCategoriesTabs();
+      loadNormCategory('windows');
+      renderRoheDefectTypesList();
+      renderRohePhotosSelection();
+      loadRoheBlueprint();
+      updateDashboardCounts();
+
+      document.getElementById('log-entry-date').value = new Date().toISOString().slice(0,10);
+      document.getElementById('rohe-meta-project').value = appState.project.name;
+      document.getElementById('rohe-meta-docnum').value = appState.project.docNum || 'RJ-B-004-2026';
+
+      if (window.lucide) lucide.createIcons();
+    });
+
+    async function persistData() {
+      await saveToDB(appState);
+      updateDashboardCounts();
+    }
+
+    function recordAudit(text) {
+      const d = new Date();
+      const pad = (n) => String(n).padStart(2, '0');
+      const timeStr = `${pad(d.getDate())}.${pad(d.getMonth()+1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      appState.auditTrail.unshift({ id: `aud-${Date.now()}`, timestamp: timeStr, text: text });
+      persistData();
+    }
+
+    function updateDashboardCounts() {
+      let totalPins = 0;
+      appState.buildings.forEach(b => {
+        b.floors.forEach(f => { totalPins += (f.pins || []).length; });
+      });
+      document.getElementById('dash-count-pins').innerText = totalPins;
+      document.getElementById('nav-count-pins').innerText = totalPins;
+
+      const uncompletedTodos = appState.todos.filter(t => !t.completed).length;
+      document.getElementById('dash-count-todos').innerText = uncompletedTodos;
+
+      const totalLogs = (appState.logEntries || []).length + (appState.calendarSchedule || []).length;
+      document.getElementById('dash-count-logs').innerText = totalLogs;
+
+      const totalNorms = 4 + (appState.customNormCategories || []).length;
+      document.getElementById('dash-count-norms').innerText = `${totalNorms} norm`;
+
+      const takeoffsCount = (appState.takeoffBook && appState.takeoffBook.sessions) ? appState.takeoffBook.sessions.length : 0;
+      document.getElementById('dash-count-takeoffs').innerText = `${takeoffsCount} kart`;
+
+      const activeB = getCurrentBuilding();
+      const activeF = getCurrentFloor();
+      document.getElementById('header-active-info').innerText = `Projekt: ${appState.project.name} (${activeB ? activeB.name : ''} • ${activeF ? activeF.name : ''})`;
+    }
+
+    function promptRenameProject() {
+      const name = prompt('Podaj nową nazwę projektu / inwestycji:', appState.project.name);
+      if (name && name.trim()) {
+        appState.project.name = name.trim();
+        document.getElementById('rohe-meta-project').value = appState.project.name;
+        recordAudit(`Zmieniono nazwę projektu na: ${appState.project.name}`);
+        updateDashboardCounts();
+      }
+    }
+
+    function switchView(viewName, pushHistory = true) {
+      document.getElementById('project-menu-dropdown').classList.add('hidden');
+
+      if (pushHistory) {
+        window.history.pushState({ view: viewName }, '');
+      }
+
+      document.querySelectorAll('.nav-tab').forEach(b => {
+        b.className = 'nav-tab px-3 py-1.5 rounded-lg transition-all text-gray-400 hover:text-white flex items-center gap-1.5';
+      });
+      const activeNav = document.getElementById(`nav-btn-${viewName}`);
+      if (activeNav) {
+        activeNav.className = 'nav-tab px-3 py-1.5 rounded-lg transition-all text-white bg-[#2d2d2d] shadow-sm flex items-center gap-1.5';
+      }
+
+      document.querySelectorAll('.view-panel').forEach(p => p.classList.add('hidden'));
+      const activePanel = document.getElementById(`view-${viewName}`);
+      if (activePanel) activePanel.classList.remove('hidden');
+
+      const structBar = document.getElementById('structure-subbar');
+      if (structBar) {
+        // Pokazuj subbar WYŁĄCZNIE w zakładce 'plan' (jak prosił użytkownik)
+        if (viewName === 'plan') structBar.classList.remove('hidden');
+        else structBar.classList.add('hidden');
+      }
+
+      if (viewName === 'report-rohe') {
+        renderRoheDefectTypesList();
+        renderRohePhotosSelection();
+        renderRoheReportPages();
+      }
+      if (viewName === 'todo') renderTodos();
+      if (viewName === 'calendar') renderCalendar();
+
+      if (window.lucide) lucide.createIcons();
+    }
+
+    /* ========================================================= */
+    /* UNIWERSALNY SILNIK PAN & PINCH-TO-ZOOM (NAPRAWIONY DLA MOBILE) */
+    /* ========================================================= */
+    function setupUniversalPanZoom(viewportEl, wrapperEl, onTransformUpdate) {
+      let curScale = 1, curPanX = 0, curPanY = 0;
+      let isPanning = false, startX = 0, startY = 0;
+      let pinchStartDist = 0, initialScale = 1;
+
+      function applyTransform() {
+        wrapperEl.style.transform = `translate(${curPanX}px, ${curPanY}px) scale(${curScale})`;
+        if (onTransformUpdate) onTransformUpdate(curScale, curPanX, curPanY);
+      }
+
+      viewportEl.zoomToPoint = function(factor, clientX, clientY) {
+        const rect = viewportEl.getBoundingClientRect();
+        const mouseX = clientX - rect.left;
+        const mouseY = clientY - rect.top;
+        const newScale = Math.min(Math.max(curScale * factor, 0.08), 10.0);
+        const ratio = newScale / curScale;
+
+        curPanX = mouseX - (mouseX - curPanX) * ratio;
+        curPanY = mouseY - (mouseY - curPanY) * ratio;
+        curScale = newScale;
+        applyTransform();
+      };
+
+      viewportEl.setPanZoom = function(s, x, y) {
+        curScale = s; curPanX = x; curPanY = y;
+        applyTransform();
+      };
+
+      viewportEl.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        viewportEl.zoomToPoint(e.deltaY < 0 ? 1.15 : 0.85, e.clientX, e.clientY);
+      }, { passive: false });
+
+      viewportEl.addEventListener('mousedown', (e) => {
+        if (e.target.closest('.pin-marker') || e.target.closest('button')) return;
+        isPanning = true;
+        startX = e.clientX - curPanX;
+        startY = e.clientY - curPanY;
+        viewportEl.classList.add('panning');
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        if (!isPanning) return;
+        curPanX = e.clientX - startX;
+        curPanY = e.clientY - startY;
+        applyTransform();
+      });
+
+      window.addEventListener('mouseup', () => {
+        isPanning = false;
+        viewportEl.classList.remove('panning');
+      });
+
+      // Dotyk na telefonie (Naprawione Pinch to zoom + Pan)
+      viewportEl.addEventListener('touchstart', (e) => {
+        // Blokada natywnego przewijania
+        if (e.touches.length === 1) {
+          isPanning = true;
+          startX = e.touches[0].clientX - curPanX;
+          startY = e.touches[0].clientY - curPanY;
+        } else if (e.touches.length === 2) {
+          isPanning = false;
+          pinchStartDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+          initialScale = curScale;
+        }
+      }, { passive: false });
+
+      viewportEl.addEventListener('touchmove', (e) => {
+        e.preventDefault(); // Zapobiega natywnemu odświeżaniu (pull-to-refresh) i przewijaniu strony
+        if (e.touches.length === 1 && isPanning) {
+          curPanX = e.touches[0].clientX - startX;
+          curPanY = e.touches[0].clientY - startY;
+          applyTransform();
+        } else if (e.touches.length === 2) {
+          const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+          const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+          const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+          const factor = dist / pinchStartDist;
+          viewportEl.zoomToPoint(factor / (curScale / initialScale), midX, midY);
+        }
+      }, { passive: false });
+
+      viewportEl.addEventListener('touchend', () => { isPanning = false; });
+      viewportEl.addEventListener('touchcancel', () => { isPanning = false; });
+    }
+
+    // Nowa funkcja do obsługi przycisków zoomowania na ekranie (ikonki lupy)
+    function zoomManual(factor, vEl, currScl, wrapEl) {
+      if(!vEl || !vEl.clientWidth) return;
+      vEl.zoomToPoint(factor, vEl.clientWidth / 2, vEl.clientHeight / 2);
+    }
+
+    /* ========================================================= */
+    /* STRUKTURA BUDYNKÓW I PIĘTER                               */
+    /* ========================================================= */
+    function getCurrentBuilding() {
+      return appState.buildings.find(b => b.id === appState.currentBuildingId) || appState.buildings[0];
+    }
+
+    function getCurrentFloor() {
+      const b = getCurrentBuilding();
+      return b.floors.find(f => f.id === b.currentFloorId) || b.floors[0];
+    }
+
+    function renderStructureSubbar() {
+      const bContainer = document.getElementById('buildings-chips-list');
+      const fContainer = document.getElementById('floors-chips-list');
+      bContainer.innerHTML = '';
+      fContainer.innerHTML = '';
+
+      const curB = getCurrentBuilding();
+
+      appState.buildings.forEach(b => {
+        const isCur = b.id === appState.currentBuildingId;
+        const btn = document.createElement('button');
+        btn.className = `px-2.5 py-1 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 ${
+          isCur ? 'bg-blue-600 text-white shadow' : 'bg-[#181818] border border-[#2a2a2a] text-gray-400 hover:text-white'
+        }`;
+        btn.innerHTML = `<span>${b.name}</span>`;
+        btn.onclick = () => switchBuilding(b.id);
+        bContainer.appendChild(btn);
+      });
+
+      curB.floors.forEach(f => {
+        const isCur = f.id === curB.currentFloorId;
+        const pinCount = (f.pins || []).length;
+        const btn = document.createElement('button');
+        btn.className = `px-2.5 py-1 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 ${
+          isCur ? 'bg-amber-600 text-white shadow' : 'bg-[#181818] border border-[#2a2a2a] text-gray-400 hover:text-white'
+        }`;
+        btn.innerHTML = `<span>${f.name}</span> <span class="text-[10px] opacity-80 bg-black/40 px-1 rounded-full">${pinCount}</span>`;
+        btn.onclick = () => switchFloor(f.id);
+        fContainer.appendChild(btn);
+      });
+    }
+
+    function switchBuilding(bId) {
+      appState.currentBuildingId = bId;
+      renderStructureSubbar();
+      loadFloor(getCurrentFloor().id);
+      updateDashboardCounts();
+    }
+
+    function switchFloor(fId) {
+      const curB = getCurrentBuilding();
+      curB.currentFloorId = fId;
+      renderStructureSubbar();
+      loadFloor(fId);
+      updateDashboardCounts();
+    }
+
+    function promptNewBuilding() {
+      const name = prompt('Nazwa nowego budynku:');
+      if (name && name.trim()) {
+        const newBId = `b-${Date.now()}`;
+        const newFId = `${newBId}-f0`;
+        appState.buildings.push({
+          id: newBId,
+          name: name.trim(),
+          currentFloorId: newFId,
+          floors: [{ id: newFId, name: 'Parter', blueprint: null, pins: [] }]
+        });
+        recordAudit(`Dodano budynek: ${name.trim()}`);
+        switchBuilding(newBId);
+      }
+    }
+
+    function promptNewFloor() {
+      const curB = getCurrentBuilding();
+      const defaultName = `${curB.floors.length}. Piętro`;
+      const name = prompt(`Wprowadź nazwę kondygnacji dla ${curB.name}:`, defaultName);
+      if (name && name.trim()) {
+        const newFId = `${curB.id}-f-${Date.now()}`;
+        curB.floors.push({ id: newFId, name: name.trim(), blueprint: null, pins: [] });
+        recordAudit(`Dodano kondygnację: ${name.trim()}`);
+        switchFloor(newFId);
+      }
+    }
+
+    function clearCurrentFloorPins() {
+      const floor = getCurrentFloor();
+      if (!floor || !floor.pins || floor.pins.length === 0) return;
+      if (confirm(`Czy na pewno usunąć wszystkie (${floor.pins.length}) pinezki z kondygnacji: ${floor.name}?`)) {
+        floor.pins = [];
+        recordAudit(`Wyczyszczono pinezki na piętrze: ${floor.name}`);
+        renderPins();
+        renderStructureSubbar();
+      }
+    }
+
+    /* ========================================================= */
+    /* RZUT ROBOCZY                                              */
+    /* ========================================================= */
+    function loadFloor(floorId) {
+      const curB = getCurrentBuilding();
+      const floor = curB.floors.find(f => f.id === floorId) || curB.floors[0];
+      pinsLayer.innerHTML = '';
+
+      if (floor && floor.blueprint) {
+        planEmptyState.style.display = 'none';
+        planImg.src = floor.blueprint;
+        planImg.onload = () => {
+          planWrapper.style.width = planImg.naturalWidth + 'px';
+          planWrapper.style.height = planImg.naturalHeight + 'px';
+          renderPins();
+          fitBlueprintToView();
+        };
+      } else {
+        planEmptyState.style.display = 'flex';
+        document.getElementById('empty-state-title').innerText = `Brak podkładu roboczego dla: ${curB.name} - ${floor.name}`;
+        planImg.src = '';
+        planWrapper.style.width = '0px';
+        planWrapper.style.height = '0px';
+      }
+    }
+
+    async function handlePlanUploadUniversal(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      let dataUrl = null;
+      // Bardziej niezawodne sprawdzanie PDF (Android potrafi zgubić type)
+      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+        try {
+          dataUrl = await renderPdfToDataUrl(file);
+        } catch (err) {
+          alert('Błąd podczas renderowania pliku PDF. Spróbuj skonwertować go na JPG lub sprawdź plik.');
+          return;
+        }
+      } else {
+        dataUrl = await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (evt) => resolve(evt.target.result);
+          reader.readAsDataURL(file);
+        });
+      }
+
+      const curB = getCurrentBuilding();
+      const floor = getCurrentFloor();
+      floor.blueprint = dataUrl;
+      recordAudit(`Wgrano podkład (${file.name}): ${curB.name} / ${floor.name}`);
+      await persistData();
+      loadFloor(floor.id);
+    }
+
+    function renderPins() {
+      pinsLayer.innerHTML = '';
+      const floor = getCurrentFloor();
+      if (!floor || !floor.pins) return;
+
+      floor.pins.forEach(pin => {
+        const marker = document.createElement('div');
+        marker.className = 'pin-marker';
+        marker.style.left = `${pin.x}%`;
+        marker.style.top = `${pin.y}%`;
+        marker.innerHTML = `<span>${pin.num}</span>`;
+        marker.onclick = (e) => {
+          e.stopPropagation();
+          openPinModal(pin.id);
+        };
+        pinsLayer.appendChild(marker);
+      });
+      persistData();
+    }
+
+    function fitBlueprintToView() {
+      const floor = getCurrentFloor();
+      if (!floor || !floor.blueprint || planImg.naturalWidth === 0) return;
+      const vw = viewport.clientWidth;
+      const vh = viewport.clientHeight;
+      const iw = planImg.naturalWidth;
+      const ih = planImg.naturalHeight;
+
+      const s = Math.min((vw * 0.94) / iw, (vh * 0.94) / ih, 1.5);
+      const px = (vw - iw * s) / 2;
+      const py = (vh - ih * s) / 2;
+      viewport.setPanZoom(s, px, py);
+    }
+
+    function setupBlueprintClick() {
+      viewport.addEventListener('click', (e) => {
+        if (e.target.closest('.pin-marker') || e.target.closest('button') || !getCurrentFloor().blueprint) return;
+        const rect = planWrapper.getBoundingClientRect();
+        const clickX = (e.clientX - rect.left) / scale;
+        const clickY = (e.clientY - rect.top) / scale;
+
+        if (clickX >= 0 && clickX <= planImg.naturalWidth && clickY >= 0 && clickY <= planImg.naturalHeight) {
+          const pctX = (clickX / planImg.naturalWidth) * 100;
+          const pctY = (clickY / planImg.naturalHeight) * 100;
+          openPinModal(null, { x: pctX, y: pctY });
+        }
+      });
+    }
+
+    function openPinModal(pinId = null, coords = null) {
+      selectedPinId = pinId;
+      tempPinUploadPhoto = null;
+      const modal = document.getElementById('modal-pin');
+      const badge = document.getElementById('modal-pin-badge');
+      const descInput = document.getElementById('modal-pin-desc');
+      const locInput = document.getElementById('modal-pin-loc');
+      const photoBox = document.getElementById('modal-photo-preview-box');
+      const photoImg = document.getElementById('modal-photo-preview-img');
+      const deleteBtn = document.getElementById('modal-pin-btn-delete');
+
+      if (pinId) {
+        const floor = getCurrentFloor();
+        const pin = floor.pins.find(p => p.id === pinId);
+        if (!pin) return;
+        badge.innerText = pin.num;
+        descInput.value = pin.desc || '';
+        locInput.value = pin.locationDetail || '';
+        tempPinUploadPhoto = pin.photo || null;
+        if (pin.photo) {
+          photoBox.classList.remove('hidden');
+          photoImg.src = pin.photo;
+        } else {
+          photoBox.classList.add('hidden');
+        }
+        deleteBtn.classList.remove('hidden');
+      } else {
+        let maxNum = 0;
+        appState.buildings.forEach(b => {
+          b.floors.forEach(f => { (f.pins || []).forEach(p => { if (p.num > maxNum) maxNum = p.num; }); });
+        });
+        const nextNum = maxNum + 1;
+        badge.innerText = nextNum;
+        descInput.value = '';
+        locInput.value = '';
+        photoBox.classList.add('hidden');
+        photoImg.src = '';
+        deleteBtn.classList.add('hidden');
+        window._pendingPinCoord = { x: coords.x, y: coords.y, num: nextNum };
+      }
+
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closePinModal() {
+      document.getElementById('modal-pin').classList.add('hidden');
+      document.getElementById('modal-pin').classList.remove('flex');
+    }
+
+    function handlePinPhotoUpload(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        const img = new Image();
+        img.onload = () => {
+          const maxDim = 1200;
+          let w = img.width, h = img.height;
+          if (w > h && w > maxDim) { h = Math.round((h * maxDim) / w); w = maxDim; }
+          else if (h > maxDim) { w = Math.round((w * maxDim) / h); h = maxDim; }
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          tempPinUploadPhoto = canvas.toDataURL('image/jpeg', 0.85);
+          document.getElementById('modal-photo-preview-box').classList.remove('hidden');
+          document.getElementById('modal-photo-preview-img').src = tempPinUploadPhoto;
+        };
+        img.src = evt.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function savePinFromModal() {
+      const desc = document.getElementById('modal-pin-desc').value.trim() || 'Usterka do usunięcia';
+      const loc = document.getElementById('modal-pin-loc').value.trim();
+      const curB = getCurrentBuilding();
+      const floor = getCurrentFloor();
+
+      if (selectedPinId) {
+        const pin = floor.pins.find(p => p.id === selectedPinId);
+        if (pin) {
+          pin.desc = desc;
+          pin.locationDetail = loc;
+          if (tempPinUploadPhoto) pin.photo = tempPinUploadPhoto;
+          recordAudit(`Zaktualizowano usterkę #${pin.num}: ${desc}`);
+        }
+      } else {
+        const newPin = {
+          id: `pin-${Date.now()}`,
+          num: window._pendingPinCoord.num,
+          x: window._pendingPinCoord.x,
+          y: window._pendingPinCoord.y,
+          desc: desc,
+          locationDetail: loc,
+          photo: tempPinUploadPhoto,
+          buildingId: curB.id,
+          buildingName: curB.name,
+          floorId: floor.id,
+          floorName: floor.name
+        };
+        floor.pins.push(newPin);
+        recordAudit(`Dodano usterkę #${newPin.num} w ${curB.name} (${floor.name}): ${desc}`);
+      }
+
+      closePinModal();
+      renderPins();
+      renderStructureSubbar();
+    }
+
+    function deleteCurrentPin() {
+      if (!selectedPinId) return;
+      const floor = getCurrentFloor();
+      const pin = floor.pins.find(p => p.id === selectedPinId);
+      if (pin) {
+        recordAudit(`Usunięto usterkę #${pin.num}`);
+        floor.pins = floor.pins.filter(p => p.id !== selectedPinId);
+      }
+      closePinModal();
+      renderPins();
+      renderStructureSubbar();
+    }
+
+    /* ========================================================= */
+    /* RAPORT JAKOŚCIOWY RJ-V (Workflow ulepszony)               */
+    /* ========================================================= */
+    async function handleRohePlanUploadUniversal(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      let dataUrl = null;
+      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+        try {
+          dataUrl = await renderPdfToDataUrl(file);
+        } catch (err) {
+          alert('Błąd podczas renderowania pliku PDF dla RJ-V.');
+          return;
+        }
+      } else {
+        dataUrl = await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (evt) => resolve(evt.target.result);
+          reader.readAsDataURL(file);
+        });
+      }
+
+      appState.roheReport.blueprint = dataUrl;
+      recordAudit(`Wgrano podkład RJ-V (${file.name})`);
+      await persistData();
+      loadRoheBlueprint();
+      renderRoheReportPages();
+    }
+
+    function loadRoheBlueprint() {
+      if (!rohePlanImg) return;
+      if (appState.roheReport && appState.roheReport.blueprint) {
+        roheEmptyState.style.display = 'none';
+        rohePlanImg.src = appState.roheReport.blueprint;
+        rohePlanImg.onload = () => {
+          rohePlanWrapper.style.width = rohePlanImg.naturalWidth + 'px';
+          rohePlanWrapper.style.height = rohePlanImg.naturalHeight + 'px';
+          renderRohePins();
+          fitRoheBlueprintToView();
+        };
+      } else {
+        roheEmptyState.style.display = 'flex';
+        rohePlanImg.src = '';
+      }
+    }
+
+    function fitRoheBlueprintToView() {
+      if (!appState.roheReport.blueprint || rohePlanImg.naturalWidth === 0) return;
+      const vw = roheViewport.clientWidth;
+      const vh = roheViewport.clientHeight;
+      const iw = rohePlanImg.naturalWidth;
+      const ih = rohePlanImg.naturalHeight;
+
+      const s = Math.min((vw * 0.94) / iw, (vh * 0.94) / ih, 1.2);
+      const px = (vw - iw * s) / 2;
+      const py = (vh - ih * s) / 2;
+      roheViewport.setPanZoom(s, px, py);
+    }
+
+    function setupRoheBlueprintClick() {
+      roheViewport.addEventListener('click', (e) => {
+        if (e.target.closest('.pin-marker') || e.target.closest('button') || !appState.roheReport.blueprint) return;
+        const rect = rohePlanWrapper.getBoundingClientRect();
+        const clickX = (e.clientX - rect.left) / roheScale;
+        const clickY = (e.clientY - rect.top) / roheScale;
+
+        if (clickX >= 0 && clickX <= rohePlanImg.naturalWidth && clickY >= 0 && clickY <= rohePlanImg.naturalHeight) {
+          const pctX = (clickX / rohePlanImg.naturalWidth) * 100;
+          const pctY = (clickY / rohePlanImg.naturalHeight) * 100;
+          openRohePinModal(pctX, pctY);
+        }
+      });
+    }
+
+    function renderRohePins() {
+      rohePinsLayer.innerHTML = '';
+      (appState.roheReport.pins || []).forEach(pin => {
+        const marker = document.createElement('div');
+        marker.className = 'pin-marker';
+        marker.style.left = `${pin.x}%`;
+        marker.style.top = `${pin.y}%`;
+        marker.innerHTML = `<span>${pin.defectNum}</span>`;
+        marker.onclick = (e) => {
+          e.stopPropagation();
+          if (confirm(`Usunąć tę pinezkę wady nr ${pin.defectNum}?`)) {
+            appState.roheReport.pins = appState.roheReport.pins.filter(p => p.id !== pin.id);
+            persistData();
+            renderRohePins();
+            renderRohePhotosSelection();
+            renderRoheReportPages();
+          }
+        };
+        rohePinsLayer.appendChild(marker);
+      });
+    }
+
+    function clearRohePins() {
+      if (confirm('Czy na pewno wyczyścić wszystkie pinezki na rzucie Raportu Jakościowego RJ-V?')) {
+        appState.roheReport.pins = [];
+        persistData();
+        renderRohePins();
+        renderRohePhotosSelection();
+        renderRoheReportPages();
+      }
+    }
+
+    function toggleRoheDefectMode() {
+      const isNew = document.getElementById('rohe-mode-new').checked;
+      document.getElementById('rohe-field-new').classList.toggle('hidden', !isNew);
+      document.getElementById('rohe-field-existing').classList.toggle('hidden', isNew);
+    }
+
+    function openRohePinModal(x, y) {
+      const select = document.getElementById('modal-rohe-pin-select-defect');
+      select.innerHTML = '';
+
+      if (appState.roheReport.defectTypes.length === 0) {
+        document.getElementById('rohe-mode-new').checked = true;
+        toggleRoheDefectMode();
+      } else {
+        document.getElementById('rohe-mode-existing').checked = true;
+        toggleRoheDefectMode();
+        appState.roheReport.defectTypes.forEach(d => {
+          select.innerHTML += `<option value="${d.num}">${d.num}. ${d.text}</option>`;
+        });
+      }
+
+      tempRohePinUploadPhoto = null;
+      document.getElementById('modal-rohe-pin-new-text').value = '';
+      document.getElementById('modal-rohe-photo-preview-box').classList.add('hidden');
+      document.getElementById('modal-rohe-photo-preview-img').src = '';
+      window._pendingRoheCoord = { x, y };
+
+      const modal = document.getElementById('modal-rohe-pin');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeRohePinModal() {
+      document.getElementById('modal-rohe-pin').classList.add('hidden');
+      document.getElementById('modal-rohe-pin').classList.remove('flex');
+    }
+
+    function handleRohePinPhotoUpload(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        const img = new Image();
+        img.onload = () => {
+          const maxDim = 1200;
+          let w = img.width, h = img.height;
+          if (w > h && w > maxDim) { h = Math.round((h * maxDim) / w); w = maxDim; }
+          else if (h > maxDim) { w = Math.round((w * maxDim) / h); h = maxDim; }
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          tempRohePinUploadPhoto = canvas.toDataURL('image/jpeg', 0.85);
+          document.getElementById('modal-rohe-photo-preview-box').classList.remove('hidden');
+          document.getElementById('modal-rohe-photo-preview-img').src = tempRohePinUploadPhoto;
+        };
+        img.src = evt.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function saveRohePinFromModal() {
+      const isNew = document.getElementById('rohe-mode-new').checked;
+      let defectNum = 1;
+      let defectText = '';
+
+      if (isNew) {
+        defectText = document.getElementById('modal-rohe-pin-new-text').value.trim() || 'Usterka';
+        defectNum = appState.roheReport.defectTypes.length + 1;
+        appState.roheReport.defectTypes.push({
+          id: `dt-${Date.now()}`,
+          num: defectNum,
+          text: defectText
+        });
+      } else {
+        defectNum = parseInt(document.getElementById('modal-rohe-pin-select-defect').value) || 1;
+        const found = appState.roheReport.defectTypes.find(d => d.num === defectNum);
+        defectText = found ? found.text : 'Usterka';
+      }
+
+      const loc = document.getElementById('modal-rohe-pin-loc').value.trim() || 'Lokalizacja ogólna';
+
+      appState.roheReport.pins.push({
+        id: `rpin-${Date.now()}`,
+        x: window._pendingRoheCoord.x,
+        y: window._pendingRoheCoord.y,
+        defectNum: defectNum,
+        defectText: defectText,
+        loc: loc,
+        photo: tempRohePinUploadPhoto,
+        printInReport: true // Domyślnie zdjęcia drukują się w raporcie (opcja usunięcia wizualnie z PDF)
+      });
+
+      closeRohePinModal();
+      persistData();
+      renderRoheDefectTypesList();
+      renderRohePins();
+      renderRohePhotosSelection();
+      renderRoheReportPages();
+    }
+
+    function renderRoheDefectTypesList() {
+      const container = document.getElementById('rohe-defect-types-list');
+      if (!container) return;
+      container.innerHTML = '';
+
+      if (appState.roheReport.defectTypes.length === 0) {
+        container.innerHTML = `<span class="text-gray-500 italic">Brak pozycji w katalogu uwag ogólnych. Kliknij na rzut, aby dodać usterkę.</span>`;
+        return;
+      }
+
+      appState.roheReport.defectTypes.forEach(d => {
+        const div = document.createElement('div');
+        div.className = 'bg-[#1b1b1b] p-2 rounded-lg border border-[#2a2a2a] flex items-center justify-between';
+        div.innerHTML = `
+          <div class="flex items-center gap-2">
+            <span class="font-bold text-rose-400 bg-rose-950/60 px-2 py-0.5 rounded border border-rose-800/40">${d.num}.</span>
+            <span class="text-white">${d.text}</span>
+          </div>
+          <button onclick="deleteRoheDefectType('${d.id}')" class="text-gray-500 hover:text-rose-400 p-1">
+            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+          </button>
+        `;
+        container.appendChild(div);
+      });
+      if (window.lucide) lucide.createIcons();
+    }
+
+    function deleteRoheDefectType(id) {
+      appState.roheReport.defectTypes = appState.roheReport.defectTypes.filter(d => d.id !== id);
+      appState.roheReport.defectTypes.forEach((d, idx) => d.num = idx + 1); // Renumber
+      persistData();
+      renderRoheDefectTypesList();
+      renderRoheReportPages();
+    }
+
+    function renderRohePhotosSelection() {
+      const container = document.getElementById('rohe-photos-selection-list');
+      if (!container) return;
+      container.innerHTML = '';
+
+      const photos = (appState.roheReport.pins || []).filter(p => p.photo);
+      if (photos.length === 0) {
+        container.innerHTML = `<span class="text-gray-500 italic text-[11px] col-span-3">Brak zdjęć w RJ-V.</span>`;
+        return;
+      }
+
+      photos.forEach(p => {
+        const card = document.createElement('div');
+        card.className = `p-2 rounded-xl border flex items-center gap-2 ${
+          p.printInReport ? 'bg-[#181818] border-rose-800/60' : 'bg-[#101010] border-[#222] opacity-60'
+        }`;
+        card.innerHTML = `
+          <img src="${p.photo}" class="w-12 h-12 object-cover rounded-lg border border-[#333] shrink-0" />
+          <div class="flex-1 min-w-0">
+            <div class="font-bold text-[11px] text-white truncate">Wada #${p.defectNum}</div>
+            <div class="text-[10px] text-gray-400 truncate">${p.loc}</div>
+            <label class="flex items-center gap-1.5 mt-1 cursor-pointer">
+              <input type="checkbox" ${p.printInReport ? 'checked' : ''} onchange="toggleRohePhotoPrint('${p.id}')" class="rounded bg-[#222] border-[#444] text-rose-600 focus:ring-0">
+              <span class="text-[10px] font-semibold ${p.printInReport ? 'text-rose-400' : 'text-gray-500'}">Drukuj w raporcie</span>
+            </label>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function toggleRohePhotoPrint(pinId) {
+      const p = appState.roheReport.pins.find(pin => pin.id === pinId);
+      if (p) {
+        p.printInReport = !p.printInReport;
+        persistData();
+        renderRohePhotosSelection();
+        renderRoheReportPages();
+      }
+    }
+
+    function removePhotoFromRohePrint(pinId) {
+      // Wywoływane bezpośrednio z wydruku
+      const p = appState.roheReport.pins.find(pin => pin.id === pinId);
+      if (p) {
+        p.printInReport = false;
+        persistData();
+        renderRohePhotosSelection();
+        renderRoheReportPages();
+      }
+    }
+
+    async function renderRoheReportPages() {
+      const container = document.getElementById('rohe-report-container');
+      if (!container) return;
+      container.innerHTML = '<div class="text-white text-center py-6 text-xs">Przygotowywanie raportu RJ-V...</div>';
+
+      const docNum = document.getElementById('rohe-meta-docnum').value;
+      const docDate = document.getElementById('rohe-meta-date').value;
+      const author = document.getElementById('rohe-meta-author').value;
+      const contractor = document.getElementById('rohe-meta-contractor').value;
+      const project = document.getElementById('rohe-meta-project').value;
+      const subject = document.getElementById('rohe-meta-subject').value;
+      const trade = document.getElementById('rohe-meta-trade').value;
+      const loc = document.getElementById('rohe-meta-loc').value;
+      const normsRef = document.getElementById('rohe-meta-norms-ref').value;
+      const bodyText = document.getElementById('rohe-meta-bodytext').value;
+
+      const selectedPhotos = (appState.roheReport.pins || []).filter(p => p.photo && p.printInReport);
+      const photoPages = [];
+      for (let i = 0; i < selectedPhotos.length; i += 2) {
+        photoPages.push(selectedPhotos.slice(i, i + 2));
+      }
+
+      const hasRoheMap = !!appState.roheReport.blueprint;
+      const totalPages = 1 + (hasRoheMap ? 1 : 0) + photoPages.length + 1;
+      let currentPage = 1;
+      let html = '';
+
+      function getHeader() {
+        return `
+          <div class="flex justify-between items-start mb-4 pb-2">
+            <div class="text-[9.5pt] leading-snug text-black">
+              <div class="font-bold">Generalny Wykonawca / Dział Kontroli Jakości</div>
+              <div>Raport Techniczno-Odbiorczy</div>
+            </div>
+            ${ROHE_LOGO_SVG}
+          </div>
+        `;
+      }
+
+      function getFooter(pNum) {
+        return `
+          <div class="mt-auto pt-2 border-t border-black flex justify-between text-[8pt] text-black">
+            <span>Strona ${pNum} z ${totalPages}</span>
+            <span>INSPEKTOR BUDOWY • Protokół Jakościowy RJ-V</span>
+          </div>
+        `;
+      }
+
+      html += `
+        <div class="a4-page">
+          ${getHeader()}
+          <table class="w-full border-collapse mb-4 text-[9pt]">
+            <tr>
+              <td class="border border-black p-1.5 w-1/4">Nr dokumentu:</td>
+              <td class="border border-black p-1.5 w-1/4 font-bold">${docNum}</td>
+              <td class="border border-black p-1.5 w-1/4">Data wystawienia:</td>
+              <td class="border border-black p-1.5 w-1/4 font-bold">${docDate}</td>
+            </tr>
+          </table>
+
+          <div class="text-[15pt] font-bold mb-3 text-black">Raport jakościowy (RJ-V)</div>
+
+          <table class="w-full border-collapse mb-4 text-[9pt]">
+            <tr>
+              <td class="border border-black p-1.5 w-1/4 bg-gray-50">Nazwa projektu:</td>
+              <td class="border border-black p-1.5 font-bold" colspan="3">${project}</td>
+            </tr>
+            <tr>
+              <td class="border border-black p-1.5 bg-gray-50">Sporządził:</td>
+              <td class="border border-black p-1.5">${author}</td>
+              <td class="border border-black p-1.5 bg-gray-50">Adresat (Wykonawca):</td>
+              <td class="border border-black p-1.5 font-bold">${contractor}</td>
+            </tr>
+            <tr>
+              <td class="border border-black p-1.5 bg-gray-50">Dotyczy:</td>
+              <td class="border border-black p-1.5" colspan="3">${subject}</td>
+            </tr>
+            <tr>
+              <td class="border border-black p-1.5 bg-gray-50">Branża:</td>
+              <td class="border border-black p-1.5">
+                ${trade === 'Budowlana' ? '☒' : '☐'} Budowlana &nbsp;&nbsp;
+                ${trade === 'Sanitarna' ? '☒' : '☐'} Sanitarna &nbsp;&nbsp;
+                ${trade === 'Elektryczna' ? '☒' : '☐'} Elektryczna
+              </td>
+              <td class="border border-black p-1.5 bg-gray-50">Lokalizacja:</td>
+              <td class="border border-black p-1.5">${loc}</td>
+            </tr>
+          </table>
+
+          <div class="text-[9.5pt] mb-2 text-black leading-relaxed">
+            ${bodyText.replace(/\n/g, '<br>')}
+          </div>
+
+          <div class="text-[9.5pt] font-semibold text-gray-800 mb-3 bg-gray-50 border border-gray-300 p-2 rounded">
+            📋 Podstawa odbiorowa: <i>${normsRef}</i>
+          </div>
+
+          <div class="text-[10pt] font-bold text-black mb-2">Wykaz stwierdzonych wad i niezgodności:</div>
+          <ol class="list-decimal pl-6 text-[9.5pt] leading-relaxed text-black">
+            ${appState.roheReport.defectTypes.length > 0 ? appState.roheReport.defectTypes.map(d => `<li><b>${d.text}</b></li>`).join('') : '<li>Brak wprowadzonych uwag ogólnych.</li>'}
+          </ol>
+
+          ${getFooter(currentPage++)}
+        </div>
+      `;
+
+      if (hasRoheMap) {
+        const snapshot = await generateRoheMapSnapshot();
+        html += `
+          <div class="a4-page">
+            ${getHeader()}
+            <div class="flex-1 flex flex-col justify-start mb-3 overflow-hidden">
+              <div class="border border-black w-full h-[220mm] flex items-center justify-center bg-white overflow-hidden">
+                ${snapshot ? `<img src="${snapshot}" class="max-w-full max-h-full object-contain" />` : ''}
+              </div>
+              <div class="text-[9.5pt] italic mt-2 text-black">Załącznik 1. Rzut z naniesioną lokalizacją wad (numery odpowiadają wykazowi)</div>
+            </div>
+            ${getFooter(currentPage++)}
+          </div>
+        `;
+      }
+
+      let photoCounter = 1;
+      for (let i = 0; i < photoPages.length; i++) {
+        const pair = photoPages[i];
+        html += `
+          <div class="a4-page">
+            ${getHeader()}
+            <div class="flex-1 flex flex-col justify-start mb-3 space-y-4">
+              ${pair.map(p => `
+                <div class="relative group">
+                  <button onclick="removePhotoFromRohePrint('${p.id}')" title="Usuń ten przykład z raportu" class="no-print absolute top-2 right-2 bg-red-600 hover:bg-red-500 text-white text-[10px] font-bold px-2 py-1 rounded shadow">
+                    ✕ Usuń ze zdjęć RJ-V
+                  </button>
+                  <div class="border border-black w-full ${pair.length === 1 ? 'h-[210mm]' : 'h-[100mm]'} flex items-center justify-center bg-white overflow-hidden">
+                    <img src="${p.photo}" class="max-w-full max-h-full object-contain" />
+                  </div>
+                  <div class="text-[9.5pt] mt-1.5 text-black">
+                    <b>Załącznik fot. ${photoCounter++}:</b> ${p.loc} &nbsp;—&nbsp; <i>Przykład wady nr ${p.defectNum} (${p.defectText})</i>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+            ${getFooter(currentPage++)}
+          </div>
+        `;
+      }
+
+      html += `
+        <div class="a4-page">
+          ${getHeader()}
+          <div class="text-[13pt] font-bold mb-4 text-black">Protokół Przekazania i Usunięcia Wad</div>
+
+          <table class="w-full border-collapse text-[9pt] mt-4">
+            <tr>
+              <td class="border border-black p-3 w-1/2 h-28 align-top">
+                Sporządził dnia: ${docDate}<br><br>
+                Imię i Nazwisko: <b>${author}</b><br>
+                Podpis: ....................................................
+              </td>
+              <td class="border border-black p-3 w-1/2 align-top">
+                Potwierdzenie przyjęcia przez Wykonawcę:<br><br>
+                Dnia: ....................................................<br>
+                Imię i Nazwisko: ....................................................<br>
+                Podpis: ....................................................
+              </td>
+            </tr>
+            <tr>
+              <td colspan="2" class="border border-black p-3 h-36 align-top">
+                <b>Akceptacja sposobu naprawy przez Generalnego Wykonawcę:</b><br>
+                Uwagi inspektora: ....................................................................................................................<br>
+                ....................................................................................................................................................<br><br>
+                <div class="flex gap-6 mt-2">
+                  <span>☐ Akceptacja bez uwag</span>
+                  <span>☐ Akceptacja warunkowa z uwagami</span>
+                  <span>☐ Brak akceptacji</span>
+                </div>
+                <br>
+                Dnia: ............................................ Podpis: ............................................
+              </td>
+            </tr>
+            <tr>
+              <td colspan="2" class="border border-black p-3 h-28 align-top">
+                <b>Potwierdzenie usunięcia usterek i bezusterkowego odbioru:</b><br><br>
+                Dnia: ............................................ &nbsp;&nbsp;&nbsp;&nbsp; Podpis Inspektora: ............................................
+              </td>
+            </tr>
+          </table>
+
+          ${getFooter(currentPage++)}
+        </div>
+      `;
+
+      container.innerHTML = html;
+    }
+
+    function generateRoheMapSnapshot() {
+      return new Promise((resolve) => {
+        if (!appState.roheReport.blueprint) { resolve(null); return; }
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+
+          (appState.roheReport.pins || []).forEach(pin => {
+            const px = (pin.x / 100) * img.width;
+            const py = (pin.y / 100) * img.height;
+            const r = Math.max(img.width * 0.016, 22);
+
+            ctx.fillStyle = '#e11d48';
+            ctx.beginPath();
+            ctx.arc(px, py, r, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.lineWidth = Math.max(r * 0.16, 4);
+            ctx.strokeStyle = '#ffffff';
+            ctx.stroke();
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = `bold ${Math.round(r * 1.15)}px Arial, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(pin.defectNum, px, py);
+          });
+          resolve(canvas.toDataURL('image/jpeg', 0.88));
+        };
+        img.src = appState.roheReport.blueprint;
+      });
+    }
+
+    /* ========================================================= */
+    /* SZYBKI RAPORT ROBOCZY USTEREK (PW)                        */
+    /* ========================================================= */
+    function getAllPinsFlat() {
+      let list = [];
+      appState.buildings.forEach(b => {
+        b.floors.forEach(f => {
+          (f.pins || []).forEach(p => {
+            list.push({
+              ...p,
+              buildingName: b.name,
+              floorName: f.name,
+              floorBlueprint: f.blueprint
+            });
+          });
+        });
+      });
+      return list.sort((a, b) => a.num - b.num);
+    }
+
+    function generateSinglePinMapSnapshot(blueprintUrl, pin) {
+      return new Promise((resolve) => {
+        if (!blueprintUrl) { resolve(null); return; }
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+
+          const px = (pin.x / 100) * img.width;
+          const py = (pin.y / 100) * img.height;
+          const r = Math.max(img.width * 0.02, 26);
+
+          ctx.fillStyle = '#e11d48';
+          ctx.beginPath();
+          ctx.arc(px, py, r, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.lineWidth = Math.max(r * 0.16, 4);
+          ctx.strokeStyle = '#ffffff';
+          ctx.stroke();
+
+          ctx.fillStyle = '#ffffff';
+          ctx.font = `bold ${Math.round(r * 1.15)}px Arial, sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(pin.num, px, py);
+
+          resolve(canvas.toDataURL('image/jpeg', 0.88));
+        };
+        img.src = blueprintUrl;
+      });
+    }
+
+    async function openQuickDefectReport() {
+      switchView('quick-report');
+      const container = document.getElementById('quick-report-container');
+      container.innerHTML = '<div class="text-white text-center py-10 text-xs">Generowanie raportu roboczego...</div>';
+
+      const pins = getAllPinsFlat();
+      if (pins.length === 0) {
+        container.innerHTML = '<div class="text-white text-center py-10 text-xs">Brak naniesionych usterek w projekcie roboczym.</div>';
+        return;
+      }
+
+      let html = '';
+      for (let i = 0; i < pins.length; i++) {
+        const p = pins[i];
+        const singleMapUrl = await generateSinglePinMapSnapshot(p.floorBlueprint, p);
+
+        html += `
+          <div class="a4-page">
+            <div class="flex justify-between items-center border-b-2 border-black pb-2 mb-4">
+              <div>
+                <div class="text-[14pt] font-black tracking-tight text-black">KARTA USTERKI #${p.num}</div>
+                <div class="text-[9.5pt] text-gray-700 font-semibold">${p.buildingName} • ${p.floorName}</div>
+              </div>
+              <div class="text-right text-[8.5pt] text-black">
+                <div>Projekt: ${appState.project.name}</div>
+                <div>Data: ${new Date().toLocaleDateString('pl-PL')}</div>
+              </div>
+            </div>
+
+            <div class="mb-4 bg-gray-50 border border-black p-3 rounded">
+              <div class="text-[11pt] font-bold text-black mb-1">Treść wady: ${p.desc}</div>
+              ${p.locationDetail ? `<div class="text-[9.5pt] text-gray-800">Lokalizacja / Osie: <b>${p.locationDetail}</b></div>` : ''}
+            </div>
+
+            <div class="flex-1 flex flex-col gap-4">
+              <div class="border border-black flex-1 flex flex-col items-center justify-center p-2 bg-white overflow-hidden" style="max-height: 105mm;">
+                ${singleMapUrl ? `<img src="${singleMapUrl}" class="max-w-full max-h-full object-contain" />` : '<span class="text-xs text-gray-400">Brak podkładu rzutu</span>'}
+              </div>
+              <div class="text-[8.5pt] italic text-center text-gray-700">Rzut kondygnacji z lokalizacją usterki #${p.num}</div>
+
+              <div class="border border-black flex-1 flex flex-col items-center justify-center p-2 bg-white overflow-hidden" style="max-height: 105mm;">
+                ${p.photo ? `<img src="${p.photo}" class="max-w-full max-h-full object-contain" />` : '<span class="text-xs text-gray-400">Brak załączonego zdjęcia</span>'}
+              </div>
+              <div class="text-[8.5pt] italic text-center text-gray-700">Zdjęcie wady w terenie</div>
+            </div>
+
+            <div class="mt-auto pt-2 border-t border-black flex justify-between text-[8pt] text-black">
+              <span>Strona ${i + 1} z ${pins.length}</span>
+              <span>INSPEKTOR BUDOWY • Dokument roboczy</span>
+            </div>
+          </div>
+        `;
+      }
+
+      container.innerHTML = html;
+    }
+
+    /* ========================================================= */
+    /* MODUŁ NORM: DODAWANIE WŁASNYCH NORM & CHECKLISTA          */
+    /* ========================================================= */
+    let activeNormCat = 'windows';
+    const DEFAULT_NORMS = {}; // Puste dla draftu
+
+    function renderNormCategoriesTabs() {
+      const container = document.getElementById('norms-tabs-bar');
+      const selectCat = document.getElementById('custom-norm-cat');
+      if (!container) return;
+      container.innerHTML = '';
+      selectCat.innerHTML = '';
+
+      const allCategories = { ...DEFAULT_NORMS };
+      (appState.customNormCategories || []).forEach(cn => {
+        allCategories[cn.id] = cn;
+      });
+
+      Object.keys(allCategories).forEach(catKey => {
+        const item = allCategories[catKey];
+        const isCur = catKey === activeNormCat;
+
+        const btn = document.createElement('button');
+        btn.className = `p-3 rounded-xl border text-left flex flex-col gap-1 transition-all shrink-0 ${
+          isCur ? 'bg-[#191919] border-purple-500 text-white' : 'bg-[#141414] border-[#252525] text-gray-300 hover:text-white'
+        }`;
+        btn.innerHTML = `
+          <span class="font-bold ${isCur ? 'text-purple-400' : 'text-gray-200'}">${item.short || item.title}</span>
+          <span class="text-[10px] text-gray-400 truncate max-w-[160px]">${item.title}</span>
+        `;
+        btn.onclick = () => loadNormCategory(catKey);
+        container.appendChild(btn);
+
+        selectCat.innerHTML += `<option value="${catKey}">${item.short || item.title}</option>`;
+      });
+    }
+
+    function loadNormCategory(catKey) {
+      activeNormCat = catKey;
+      renderNormCategoriesTabs();
+
+      const allCategories = { ...DEFAULT_NORMS };
+      (appState.customNormCategories || []).forEach(cn => { allCategories[cn.id] = cn; });
+
+      const data = allCategories[catKey];
+      if (!data) return;
+
+      const customItems = (appState.customNormChecklist || []).filter(c => c.cat === catKey);
+      const combinedChecklist = [...(data.checklist || []), ...customItems];
+
+      const container = document.getElementById('norm-detail-card');
+      container.innerHTML = `
+        <div class="border-b border-[#252525] pb-3">
+          <h3 class="text-sm font-bold text-white flex items-center gap-2">
+            <i data-lucide="book-check" class="w-4 h-4 text-purple-400"></i> ${data.title}
+          </h3>
+        </div>
+
+        <div class="space-y-2 pt-3">
+          <span class="text-xs font-bold text-blue-400 uppercase tracking-wider block">Wymogi techniczne i tolerancje:</span>
+          <ul class="space-y-1.5 text-xs text-gray-300">
+            ${(data.guidelines || []).map(g => `<li class="flex items-start gap-2"><span class="text-purple-400">•</span><span>${g}</span></li>`).join('')}
+          </ul>
+        </div>
+
+        <div class="pt-3 border-t border-[#252525] space-y-2">
+          <span class="text-xs font-bold text-emerald-400 uppercase tracking-wider block">Checklista odbiorowa:</span>
+          <div class="space-y-2">
+            ${combinedChecklist.map(item => `
+              <div class="bg-[#1b1b1b] border border-[#282828] p-2.5 rounded-xl flex items-center justify-between gap-3 text-xs">
+                <label class="flex items-center gap-2 cursor-pointer text-gray-200">
+                  <input type="checkbox" class="w-4 h-4 rounded bg-[#111] border-[#333] text-purple-600 focus:ring-0">
+                  <span>${item.text}</span>
+                  ${item.isNiceToHave ? '<span class="text-[9px] bg-purple-950 text-purple-300 border border-purple-700/60 px-1.5 py-0.2 rounded font-bold">NICE TO HAVE</span>' : ''}
+                </label>
+                <button onclick="createDefectFromNorm('${item.text}')" class="text-[11px] bg-[#252525] hover:bg-rose-950 text-rose-300 border border-rose-900/40 px-2 py-1 rounded-lg shrink-0">
+                  + Zgłoś usterkę
+                </button>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+      if (window.lucide) lucide.createIcons();
+    }
+
+    function saveNewNormCategory() {
+      const short = document.getElementById('new-norm-short').value.trim();
+      const title = document.getElementById('new-norm-title').value.trim();
+      const glRaw = document.getElementById('new-norm-guidelines').value.trim();
+
+      if (!short || !title) return;
+      const guidelines = glRaw ? glRaw.split('\n').filter(l => l.trim()) : [];
+      const newId = `norm-${Date.now()}`;
+
+      if (!appState.customNormCategories) appState.customNormCategories = [];
+      appState.customNormCategories.push({
+        id: newId,
+        short: short,
+        title: title,
+        guidelines: guidelines,
+        checklist: []
+      });
+
+      recordAudit(`Dodano nową normę: ${title}`);
+      document.getElementById('new-norm-short').value = '';
+      document.getElementById('new-norm-title').value = '';
+      document.getElementById('new-norm-guidelines').value = '';
+
+      toggleElement('modal-add-norm-category');
+      activeNormCat = newId;
+      renderNormCategoriesTabs();
+      loadNormCategory(newId);
+      updateDashboardCounts();
+    }
+
+    function saveCustomNormItem() {
+      const cat = document.getElementById('custom-norm-cat').value;
+      const text = document.getElementById('custom-norm-text').value.trim();
+      const isNiceToHave = document.getElementById('custom-norm-nicetohave').checked;
+
+      if (!text) return;
+
+      if (!appState.customNormChecklist) appState.customNormChecklist = [];
+      appState.customNormChecklist.push({ cat, text, isNiceToHave });
+      recordAudit(`Dodano punkt do checklisty (${cat}): ${text}`);
+      document.getElementById('custom-norm-text').value = '';
+      toggleElement('modal-add-norm');
+      loadNormCategory(cat);
+    }
+
+    function createDefectFromNorm(text) {
+      switchView('plan');
+      setTimeout(() => {
+        openPinModal(null, { x: 50, y: 50 });
+        document.getElementById('modal-pin-desc').value = `Niezgodność: ${text}`;
+      }, 200);
+    }
+
+    /* ========================================================= */
+    /* ZADANIA TO-DO                                             */
+    /* ========================================================= */
+    function setTodoFilter(filter) {
+      todoFilter = filter;
+      document.querySelectorAll('[id^="todofilter-"]').forEach(btn => {
+        btn.className = 'text-xs font-semibold px-2.5 py-1 rounded-lg text-gray-400 hover:text-white';
+      });
+      const active = document.getElementById(`todofilter-${filter}`);
+      if (active) active.className = 'text-xs font-semibold px-2.5 py-1 rounded-lg bg-blue-600 text-white';
+      renderTodos();
+    }
+
+    function addQuickTodo() {
+      const titleInput = document.getElementById('new-todo-title');
+      const title = titleInput.value.trim();
+      if (!title) return;
+
+      const cat = document.getElementById('new-todo-cat').value;
+      const dueDate = document.getElementById('new-todo-due').value;
+      const who = document.getElementById('new-todo-who').value.trim();
+      const urgent = document.getElementById('new-todo-urgent').checked;
+
+      appState.todos.unshift({
+        id: `td-${Date.now()}`,
+        title: title,
+        category: cat,
+        dueDate: dueDate || null,
+        who: who || null,
+        urgent: urgent,
+        completed: false
+      });
+
+      recordAudit(`Dodano zadanie To-Do: "${title}"`);
+      titleInput.value = '';
+      document.getElementById('new-todo-who').value = '';
+      document.getElementById('new-todo-urgent').checked = false;
+      renderTodos();
+    }
+
+    function toggleTodoCompleted(todoId) {
+      const todo = appState.todos.find(t => t.id === todoId);
+      if (todo) {
+        todo.completed = !todo.completed;
+        recordAudit(`Zadanie "${todo.title}" oznaczone jako: ${todo.completed ? 'Wykonane' : 'Do zrobienia'}`);
+        renderTodos();
+      }
+    }
+
+    function deleteTodo(todoId) {
+      appState.todos = appState.todos.filter(t => t.id !== todoId);
+      recordAudit('Usunięto zadanie z To-Do');
+      renderTodos();
+    }
+
+    function renderTodos() {
+      const container = document.getElementById('todos-container');
+      if (!container) return;
+      container.innerHTML = '';
+
+      let filtered = appState.todos.filter(t => {
+        if (todoFilter === 'all') return true;
+        if (todoFilter === 'done') return t.completed;
+        if (todoFilter === 'urgent') return t.urgent && !t.completed;
+        if (todoFilter === 'order') return t.category === 'order';
+        if (todoFilter === 'call') return t.category === 'call';
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        container.innerHTML = `<div class="text-center py-10 border border-dashed border-[#222] rounded-2xl text-xs text-gray-500">Brak zadań w wybranej kategorii.</div>`;
+        return;
+      }
+
+      const catLabels = {
+        order: '📦 Zamówienie',
+        call: '📞 Telefon / Przypomnienie',
+        inspection: '🔍 Odbiór',
+        general: '📝 Zadanie'
+      };
+
+      filtered.forEach(todo => {
+        const card = document.createElement('div');
+        card.className = `p-3.5 rounded-xl border flex items-start gap-3 transition-all ${
+          todo.completed ? 'bg-[#0f0f0f] border-[#1f1f1f] opacity-60' : 'bg-[#141414] border-[#252525] hover:border-[#333]'
+        }`;
+
+        card.innerHTML = `
+          <input type="checkbox" ${todo.completed ? 'checked' : ''} onchange="toggleTodoCompleted('${todo.id}')" class="mt-1 w-4 h-4 rounded bg-[#202020] border-[#383838] text-emerald-600 cursor-pointer">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-xs font-semibold ${todo.completed ? 'line-through text-gray-500' : 'text-gray-100'}">${todo.title}</span>
+              ${todo.urgent ? '<span class="text-[9px] bg-rose-950/80 text-rose-300 border border-rose-800/50 px-1.5 py-0.2 rounded font-bold">PILNE</span>' : ''}
+              <span class="text-[10px] bg-[#1e1e1e] text-gray-400 px-2 py-0.5 rounded border border-[#2a2a2a]">${catLabels[todo.category] || 'Zadanie'}</span>
+            </div>
+            <div class="flex items-center gap-3 text-[11px] text-gray-400 mt-1.5 flex-wrap">
+              ${todo.dueDate ? `<span class="flex items-center gap-1 text-amber-400 font-medium"><i data-lucide="calendar" class="w-3 h-3"></i> Termin: ${todo.dueDate}</span>` : ''}
+              ${todo.who ? `<span class="flex items-center gap-1 text-gray-300"><i data-lucide="user" class="w-3 h-3"></i> ${todo.who}</span>` : ''}
+            </div>
+          </div>
+          <button onclick="deleteTodo('${todo.id}')" class="text-gray-500 hover:text-rose-400 p-1">
+            <i data-lucide="trash" class="w-3.5 h-3.5"></i>
+          </button>
+        `;
+        container.appendChild(card);
+      });
+
+      persistData();
+      if (window.lucide) lucide.createIcons();
+    }
+
+    /* ========================================================= */
+    /* KALENDARZ BUDOWY & AUDIT                                  */
+    /* ========================================================= */
+    function setCalendarSubTab(tab) {
+      calendarSubTab = tab;
+      const bSch = document.getElementById('subtab-btn-schedule');
+      const bEnt = document.getElementById('subtab-btn-entries');
+      const bAud = document.getElementById('subtab-btn-audit');
+
+      [bSch, bEnt, bAud].forEach(b => b.className = 'px-3 py-1.5 rounded-lg text-gray-400 hover:text-white');
+
+      if (tab === 'schedule') bSch.className = 'px-3 py-1.5 rounded-lg bg-[#222] text-amber-400 border border-[#333]';
+      if (tab === 'entries') bEnt.className = 'px-3 py-1.5 rounded-lg bg-[#222] text-emerald-400 border border-[#333]';
+      if (tab === 'audit') bAud.className = 'px-3 py-1.5 rounded-lg bg-[#222] text-blue-400 border border-[#333]';
+
+      renderCalendar();
+    }
+
+    function saveLogbookEntry() {
+      const date = document.getElementById('log-entry-date').value || new Date().toISOString().slice(0,10);
+      const weather = document.getElementById('log-entry-weather').value.trim();
+      const workers = document.getElementById('log-entry-workers').value.trim();
+      const text = document.getElementById('log-entry-text').value.trim();
+
+      if (!text) return;
+
+      appState.logEntries.unshift({
+        id: `log-${Date.now()}`,
+        date: date,
+        weather: weather || 'Brak danych',
+        workers: workers || 'Standardowa brygada',
+        text: text
+      });
+
+      recordAudit(`Wpis w dzienniku budowy na dzień: ${date}`);
+      document.getElementById('log-entry-text').value = '';
+      toggleElement('modal-log-entry');
+      renderCalendar();
+    }
+
+    function toggleScheduleStatus(schId) {
+      const item = appState.calendarSchedule.find(s => s.id === schId);
+      if (item) {
+        if (item.status === 'planned') item.status = 'done';
+        else if (item.status === 'done') item.status = 'delayed';
+        else item.status = 'planned';
+        recordAudit(`Zmieniono status prac "${item.title}"`);
+        renderCalendar();
+      }
+    }
+
+    function renderCalendar() {
+      const container = document.getElementById('calendar-content-container');
+      if (!container) return;
+      container.innerHTML = '';
+
+      document.getElementById('count-schedule-items').innerText = (appState.calendarSchedule || []).length;
+      document.getElementById('count-log-entries').innerText = (appState.logEntries || []).length;
+      document.getElementById('count-audit-entries').innerText = (appState.auditTrail || []).length;
+
+      if (calendarSubTab === 'schedule') {
+        if (appState.calendarSchedule.length === 0) {
+          container.innerHTML = `<div class="text-center py-10 text-xs text-gray-500">Brak zaplanowanych etapów prac.</div>`;
+          return;
+        }
+
+        appState.calendarSchedule.forEach(sch => {
+          const card = document.createElement('div');
+          card.className = 'bg-[#141414] border border-[#252525] rounded-xl p-3.5 flex items-center justify-between gap-3';
+          
+          let statusBadge = '<span class="text-[10px] bg-blue-950 text-blue-300 border border-blue-800 px-2 py-0.5 rounded">Zaplanowane</span>';
+          if (sch.status === 'done') statusBadge = '<span class="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded">✓ Zrealizowane</span>';
+          if (sch.status === 'delayed') statusBadge = '<span class="text-[10px] bg-rose-950 text-rose-300 border border-rose-800 px-2 py-0.5 rounded">⚠️ Opóźnienie</span>';
+
+          card.innerHTML = `
+            <div class="flex-1">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-xs font-mono font-bold text-amber-400">${sch.date}</span>
+                ${statusBadge}
+              </div>
+              <div class="text-xs font-semibold text-white">${sch.title}</div>
+              ${sch.note ? `<div class="text-[11px] text-gray-400 mt-0.5">${sch.note}</div>` : ''}
+            </div>
+            <button onclick="toggleScheduleStatus('${sch.id}')" class="px-3 py-1.5 rounded-lg bg-[#1f1f1f] hover:bg-[#282828] text-xs text-gray-300">
+              Zmień status
+            </button>
+          `;
+          container.appendChild(card);
+        });
+
+      } else if (calendarSubTab === 'entries') {
+        if (appState.logEntries.length === 0) {
+          container.innerHTML = `<div class="text-center py-10 text-xs text-gray-500">Brak wpisów w dzienniku budowy.</div>`;
+          return;
+        }
+
+        appState.logEntries.forEach(entry => {
+          const item = document.createElement('div');
+          item.className = 'bg-[#141414] border border-[#252525] rounded-2xl p-4 space-y-2';
+          item.innerHTML = `
+            <div class="flex items-center justify-between border-b border-[#222] pb-2">
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-black text-amber-400 bg-amber-950/40 px-2 py-0.5 rounded border border-amber-800/40 font-mono">${entry.date}</span>
+                <span class="text-[11px] text-gray-400">☀️ ${entry.weather}</span>
+              </div>
+              <span class="text-[10px] text-gray-500">👷 ${entry.workers}</span>
+            </div>
+            <p class="text-xs text-gray-200 leading-relaxed">${entry.text}</p>
+          `;
+          container.appendChild(item);
+        });
+
+      } else {
+        if (appState.auditTrail.length === 0) {
+          container.innerHTML = `<div class="text-center py-10 text-xs text-gray-500">Brak historii zdarzeń.</div>`;
+          return;
+        }
+
+        appState.auditTrail.forEach(aud => {
+          const row = document.createElement('div');
+          row.className = 'bg-[#121212] border border-[#1f1f1f] rounded-xl px-3.5 py-2.5 flex items-center justify-between gap-3 text-xs';
+          row.innerHTML = `
+            <div class="flex items-center gap-2">
+              <i data-lucide="clock" class="w-3.5 h-3.5 text-blue-500 shrink-0"></i>
+              <span class="text-gray-300">${aud.text}</span>
+            </div>
+            <span class="text-[10px] text-gray-500 font-mono shrink-0">${aud.timestamp}</span>
+          `;
+          container.appendChild(row);
+        });
+      }
+
+      persistData();
+      if (window.lucide) lucide.createIcons();
+    }
+
+    /* ========================================================= */
+    /* SPEED-DIAL: KALKULATOR                                    */
+    /* ========================================================= */
+    function toggleQuickToolsMenu() {
+      document.getElementById('quick-tools-menu').classList.toggle('hidden');
+      if (window.lucide) lucide.createIcons();
+    }
+
+    function openCalculatorModal() {
+      const modal = document.getElementById('modal-calculator');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function setCalcTab(tab) {
+      document.getElementById('calc-panel-standard').classList.toggle('hidden', tab !== 'standard');
+      document.getElementById('calc-panel-concrete').classList.toggle('hidden', tab !== 'concrete');
+      document.getElementById('calc-panel-steel').classList.toggle('hidden', tab !== 'steel');
+      document.getElementById('calc-panel-slopes').classList.toggle('hidden', tab !== 'slopes');
+
+      ['standard', 'concrete', 'steel', 'slopes'].forEach(t => {
+        const btn = document.getElementById(`calctab-${t}`);
+        if (btn) {
+          if (t === tab) btn.className = 'flex-1 py-2 px-3 text-center text-amber-400 border-b-2 border-amber-500 bg-[#1b1b1b] whitespace-nowrap';
+          else btn.className = 'flex-1 py-2 px-3 text-center text-gray-400 hover:text-white whitespace-nowrap';
+        }
+      });
+    }
+
+    let calcExpression = '';
+    function calcPress(char) {
+      const display = document.getElementById('calc-display');
+      const hist = document.getElementById('calc-history');
+
+      if (char === 'C') {
+        calcExpression = '';
+        display.innerText = '0';
+        hist.innerText = '';
+        return;
+      }
+      if (char === '=') {
+        try {
+          const sanitized = calcExpression.replace(/×/g, '*').replace(/÷/g, '/');
+          const res = Function(`'use strict'; return (${sanitized})`)();
+          hist.innerText = calcExpression + ' =';
+          calcExpression = String(res);
+          display.innerText = calcExpression;
+        } catch (e) {
+          display.innerText = 'Błąd';
+          calcExpression = '';
+        }
+        return;
+      }
+
+      calcExpression += char;
+      display.innerText = calcExpression;
+    }
+
+    function computeConcrete() {
+      const l = parseFloat(document.getElementById('calc-c-l').value) || 0;
+      const w = parseFloat(document.getElementById('calc-c-w').value) || 0;
+      const h = parseFloat(document.getElementById('calc-c-h').value) || 0;
+      if (l * w * h === 0) return;
+      const volNetto = l * w * h;
+      const volBrutto = volNetto * 1.05;
+
+      document.getElementById('calc-c-result').innerHTML = `
+        Objętość netto: <b class="text-white">${volNetto.toFixed(2)} m³</b><br>
+        Z naddatkiem 5%: <b class="text-amber-400 text-sm">${volBrutto.toFixed(2)} m³</b>
+      `;
+    }
+
+    function computeSteelWeight() {
+      const kgPerM = parseFloat(document.getElementById('calc-steel-fi').value) || 0.888;
+      const totalLen = parseFloat(document.getElementById('calc-steel-len').value) || 0;
+      if (totalLen <= 0) return;
+      const totalWeightKg = totalLen * kgPerM;
+
+      document.getElementById('calc-steel-result').innerHTML = `
+        Waga stali: <b class="text-blue-400 text-sm">${totalWeightKg.toFixed(2)} kg</b> (~${(totalWeightKg/1000).toFixed(3)} t)
+      `;
+    }
+
+    function computeSlopeDiff() {
+      const dist = parseFloat(document.getElementById('calc-slope-dist').value) || 0;
+      const pct = parseFloat(document.getElementById('calc-slope-pct').value) || 0;
+      if (dist <= 0 || pct <= 0) return;
+      const diffCm = dist * pct;
+
+      document.getElementById('calc-slope-result').innerHTML = `
+        Różnica wysokości: <b class="text-emerald-400">${diffCm.toFixed(1)} cm</b>
+      `;
+    }
+
+    /* ========================================================= */
+    /* ZAAWANSOWANA KSIĘGA OBMIARÓW (PRECYZJA PROCENTOWA 0-100%) */
+    /* ========================================================= */
+    let takeoffClickCount = 0;
+    let takeoffFirstPointPct = null;
+
+    function getActiveTakeoffSession() {
+      let session = appState.takeoffBook.sessions.find(s => s.id === appState.takeoffBook.activeSessionId);
+      if (!session) {
+        session = appState.takeoffBook.sessions[0];
+        appState.takeoffBook.activeSessionId = session.id;
+      }
+      return session;
+    }
+
+    function openTakeoffModal() {
+      const modal = document.getElementById('modal-takeoff');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+      renderTakeoffSessionsList();
+      loadActiveTakeoffSession();
+    }
+
+    function closeTakeoffModal() {
+      document.getElementById('modal-takeoff').classList.add('hidden');
+      document.getElementById('modal-takeoff').classList.remove('flex');
+    }
+
+    function renderTakeoffSessionsList() {
+      const container = document.getElementById('takeoff-sessions-list');
+      if (!container) return;
+      container.innerHTML = '';
+      document.getElementById('takeoff-sessions-count').innerText = appState.takeoffBook.sessions.length;
+
+      appState.takeoffBook.sessions.forEach(sess => {
+        const isCur = sess.id === appState.takeoffBook.activeSessionId;
+        const totalMb = (sess.items || []).filter(i => i.unit === 'mb').reduce((acc, i) => acc + i.val, 0);
+        const totalM2 = (sess.items || []).filter(i => i.unit === 'm2').reduce((acc, i) => acc + i.val, 0);
+
+        const card = document.createElement('div');
+        card.className = `p-2.5 rounded-xl border cursor-pointer transition-all ${
+          isCur ? 'bg-[#181818] border-emerald-500/80 shadow' : 'bg-[#121212] border-[#222] hover:border-[#333]'
+        }`;
+        card.innerHTML = `
+          <div class="flex items-center justify-between gap-1 mb-1">
+            <span class="font-bold text-[11px] truncate ${isCur ? 'text-white' : 'text-gray-300'}">${sess.title}</span>
+            ${appState.takeoffBook.sessions.length > 1 ? `
+              <button onclick="event.stopPropagation(); deleteTakeoffSession('${sess.id}')" class="text-gray-500 hover:text-rose-400 p-0.5">
+                <i data-lucide="trash" class="w-3 h-3"></i>
+              </button>
+            ` : ''}
+          </div>
+          <div class="flex items-center justify-between text-[10px] text-gray-500 font-mono">
+            <span>${sess.date}</span>
+            <span class="text-emerald-400 font-bold">${totalMb.toFixed(1)} mb | ${totalM2.toFixed(1)} m²</span>
+          </div>
+        `;
+        card.onclick = () => switchTakeoffSession(sess.id);
+        container.appendChild(card);
+      });
+      if (window.lucide) lucide.createIcons();
+    }
+
+    function promptCreateNewTakeoffSession() {
+      const title = prompt('Wpisz nazwę nowej karty obmiaru:', `Karta Obmiarowa ${appState.takeoffBook.sessions.length + 1}`);
+      if (title && title.trim()) {
+        const newId = `tk-${Date.now()}`;
+        const newSession = {
+          id: newId,
+          title: title.trim(),
+          date: new Date().toLocaleDateString('pl-PL'),
+          blueprint: null,
+          items: [],
+          lines: []
+        };
+        appState.takeoffBook.sessions.push(newSession);
+        appState.takeoffBook.activeSessionId = newId;
+        persistData();
+        renderTakeoffSessionsList();
+        loadActiveTakeoffSession();
+      }
+    }
+
+    function switchTakeoffSession(id) {
+      appState.takeoffBook.activeSessionId = id;
+      persistData();
+      renderTakeoffSessionsList();
+      loadActiveTakeoffSession();
+    }
+
+    function deleteTakeoffSession(id) {
+      if (confirm('Czy na pewno usunąć tę kartę obmiarową wraz z naniesionymi pomiarami?')) {
+        appState.takeoffBook.sessions = appState.takeoffBook.sessions.filter(s => s.id !== id);
+        if (appState.takeoffBook.activeSessionId === id) {
+          appState.takeoffBook.activeSessionId = appState.takeoffBook.sessions[0].id;
+        }
+        persistData();
+        renderTakeoffSessionsList();
+        loadActiveTakeoffSession();
+      }
+    }
+
+    function promptRenameActiveTakeoff() {
+      const session = getActiveTakeoffSession();
+      const newName = prompt('Zmień nazwę karty obmiarowej:', session.title);
+      if (newName && newName.trim()) {
+        session.title = newName.trim();
+        persistData();
+        renderTakeoffSessionsList();
+        document.getElementById('takeoff-active-title').innerText = session.title;
+      }
+    }
+
+    function loadActiveTakeoffSession() {
+      const session = getActiveTakeoffSession();
+      document.getElementById('takeoff-active-title').innerText = session.title;
+
+      if (session.blueprint) {
+        takeoffEmpty.style.display = 'none';
+        takeoffImg.src = session.blueprint;
+        takeoffImg.onload = () => {
+          takeoffDrawingContainer.style.width = takeoffImg.naturalWidth + 'px';
+          takeoffDrawingContainer.style.height = takeoffImg.naturalHeight + 'px';
+          fitTakeoffBlueprintToView();
+          redrawTakeoffLines();
+        };
+      } else {
+        takeoffEmpty.style.display = 'flex';
+        takeoffImg.src = '';
+        takeoffDrawingContainer.style.width = '0px';
+        takeoffDrawingContainer.style.height = '0px';
+        redrawTakeoffLines();
+      }
+
+      renderTakeoffSheet();
+    }
+
+    function fitTakeoffBlueprintToView() {
+      const session = getActiveTakeoffSession();
+      if (!session || !session.blueprint || takeoffImg.naturalWidth === 0) return;
+      const vw = takeoffViewport.clientWidth;
+      const vh = takeoffViewport.clientHeight;
+      const iw = takeoffImg.naturalWidth;
+      const ih = takeoffImg.naturalHeight;
+
+      const s = Math.min((vw * 0.94) / iw, (vh * 0.94) / ih, 1.2);
+      const px = (vw - iw * s) / 2;
+      const py = (vh - ih * s) / 2;
+      takeoffViewport.setPanZoom(s, px, py);
+    }
+
+    function setTakeoffOpacity(val) {
+      takeoffImg.style.opacity = val;
+    }
+
+    function useCurrentFloorAsTakeoff() {
+      const floor = getCurrentFloor();
+      if (!floor || !floor.blueprint) {
+        alert('Aktualna kondygnacja nie ma wgranego podkładu roboczego.');
+        return;
+      }
+      loadTakeoffImage(floor.blueprint);
+    }
+
+    async function handleTakeoffBlueprintUploadUniversal(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      let dataUrl = null;
+      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+        try {
+          dataUrl = await renderPdfToDataUrl(file);
+        } catch (err) {
+          alert('Błąd renderowania pliku PDF dla obmiarów.');
+          return;
+        }
+      } else {
+        dataUrl = await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (evt) => resolve(evt.target.result);
+          reader.readAsDataURL(file);
+        });
+      }
+
+      loadTakeoffImage(dataUrl);
+    }
+
+    function loadTakeoffImage(dataUrl) {
+      const session = getActiveTakeoffSession();
+      session.blueprint = dataUrl;
+      persistData();
+      loadActiveTakeoffSession();
+    }
+
+    function clearCurrentTakeoffLines() {
+      const session = getActiveTakeoffSession();
+      if (confirm(`Wyczyścić wszystkie linie pomiarowe i pozycje dla: ${session.title}?`)) {
+        session.lines = [];
+        session.items = [];
+        persistData();
+        redrawTakeoffLines();
+        renderTakeoffSheet();
+        renderTakeoffSessionsList();
+      }
+    }
+
+    function setupTakeoffSvgInteraction() {
+      takeoffSvgLayer.onclick = (e) => {
+        const session = getActiveTakeoffSession();
+        if (!session.blueprint || takeoffImg.naturalWidth === 0) return;
+
+        const rect = takeoffDrawingContainer.getBoundingClientRect();
+        const clickX = (e.clientX - rect.left) / takeoffScale;
+        const clickY = (e.clientY - rect.top) / takeoffScale;
+
+        // Zamiana na procenty względem naturalnych wymiarów rysunku (naprawa błędu rozjazdu punktów)
+        const pctX = (clickX / takeoffImg.naturalWidth) * 100;
+        const pctY = (clickY / takeoffImg.naturalHeight) * 100;
+
+        if (pctX < 0 || pctX > 100 || pctY < 0 || pctY > 100) return;
+
+        if (takeoffClickCount === 0) {
+          takeoffFirstPointPct = { xPct: pctX, yPct: pctY };
+          takeoffClickCount = 1;
+          document.getElementById('takeoff-status-msg').innerText = 'Punkt A zaznaczony. Kliknij punkt B...';
+          redrawTakeoffLines(pctX, pctY);
+        } else {
+          const secondPointPct = { xPct: pctX, yPct: pctY };
+          takeoffClickCount = 0;
+          const userValStr = prompt('Wpisz rzeczywisty wymiar zmierzonego odcinka w metrach (np. 3.45):', '2.50');
+          if (userValStr) {
+            const meters = parseFloat(userValStr.replace(',', '.')) || 1.0;
+            const desc = prompt('Opis pozycji obmiarowej (np. Cokół, Ściana korytarza):', 'Odcinek pomiarowy') || 'Wymiar';
+
+            session.lines.push({
+              x1Pct: takeoffFirstPointPct.xPct,
+              y1Pct: takeoffFirstPointPct.yPct,
+              x2Pct: secondPointPct.xPct,
+              y2Pct: secondPointPct.yPct,
+              label: `${meters.toFixed(2)} m`
+            });
+
+            session.items.push({
+              id: `t-${Date.now()}`,
+              desc: desc,
+              val: meters,
+              unit: 'mb'
+            });
+
+            recordAudit(`Dodano obmiar [${session.title}]: ${desc} = ${meters} mb`);
+            persistData();
+            redrawTakeoffLines();
+            renderTakeoffSheet();
+            renderTakeoffSessionsList();
+            document.getElementById('takeoff-status-msg').innerText = 'Kliknij punkt początkowy i końcowy, aby nanieść kolejny wymiar';
+          } else {
+            redrawTakeoffLines();
+          }
+        }
+      };
+    }
+
+    function redrawTakeoffLines(tempX = null, tempY = null) {
+      takeoffSvgLayer.innerHTML = '';
+      const session = getActiveTakeoffSession();
+      if (!session.blueprint || takeoffImg.naturalWidth === 0) return;
+
+      // Wykorzystujemy ZAWSZE naturalne wymiary, by SVG pasowało idealnie
+      const iw = takeoffImg.naturalWidth;
+      const ih = takeoffImg.naturalHeight;
+
+      (session.lines || []).forEach(l => {
+        const x1 = (l.x1Pct / 100) * iw;
+        const y1 = (l.y1Pct / 100) * ih;
+        const x2 = (l.x2Pct / 100) * iw;
+        const y2 = (l.y2Pct / 100) * ih;
+        const midX = (x1 + x2) / 2;
+        const midY = (y1 + y2) / 2;
+
+        takeoffSvgLayer.innerHTML += `
+          <!-- Gruba, czarna linia tła dla widoczności -->
+          <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#000000" stroke-width="8" stroke-dasharray="8,8"/>
+          <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#10b981" stroke-width="4" stroke-dasharray="8,8"/>
+          
+          <!-- Bardzo widoczne punkty z obrysem -->
+          <circle cx="${x1}" cy="${y1}" r="12" fill="#000000" />
+          <circle cx="${x1}" cy="${y1}" r="9" fill="#10b981" stroke="#ffffff" stroke-width="3" filter="drop-shadow(0 2px 5px rgba(0,0,0,0.9))"/>
+          
+          <circle cx="${x2}" cy="${y2}" r="12" fill="#000000" />
+          <circle cx="${x2}" cy="${y2}" r="9" fill="#10b981" stroke="#ffffff" stroke-width="3" filter="drop-shadow(0 2px 5px rgba(0,0,0,0.9))"/>
+          
+          <rect x="${midX - 38}" y="${midY - 14}" width="76" height="28" rx="6" fill="#000000" fill-opacity="0.9" stroke="#10b981" stroke-width="2"/>
+          <text x="${midX}" y="${midY + 5}" fill="#ffffff" font-size="14" font-weight="900" font-family="monospace" text-anchor="middle">${l.label}</text>
+        `;
+      });
+
+      // Jeśli zaznaczono punkt A w trakcie pomiaru
+      if (tempX !== null && tempY !== null) {
+        const xA = (tempX / 100) * iw;
+        const yA = (tempY / 100) * ih;
+        takeoffSvgLayer.innerHTML += `
+          <circle cx="${xA}" cy="${yA}" r="12" fill="#ef4444" stroke="#ffffff" stroke-width="3" class="animate-pulse"/>
+        `;
+      }
+    }
+
+    function addManualTakeoffRow() {
+      const desc = document.getElementById('takeoff-input-desc').value.trim() || 'Pozycja obmiarowa';
+      const val = parseFloat(document.getElementById('takeoff-input-val').value) || 0;
+      const unit = document.getElementById('takeoff-input-unit').value;
+
+      if (val <= 0) return;
+      const session = getActiveTakeoffSession();
+
+      session.items.push({ id: `t-${Date.now()}`, desc, val, unit });
+      document.getElementById('takeoff-input-desc').value = '';
+      document.getElementById('takeoff-input-val').value = '';
+
+      persistData();
+      renderTakeoffSheet();
+      renderTakeoffSessionsList();
+    }
+
+    function deleteTakeoffRow(id) {
+      const session = getActiveTakeoffSession();
+      session.items = session.items.filter(i => i.id !== id);
+      persistData();
+      renderTakeoffSheet();
+      renderTakeoffSessionsList();
+    }
+
+    function renderTakeoffSheet() {
+      const container = document.getElementById('takeoff-items-list');
+      if (!container) return;
+      container.innerHTML = '';
+      const session = getActiveTakeoffSession();
+
+      let sumMb = 0, sumM2 = 0;
+      (session.items || []).forEach((item, index) => {
+        if (item.unit === 'mb') sumMb += item.val;
+        if (item.unit === 'm2') sumM2 += item.val;
+
+        const row = document.createElement('div');
+        row.className = 'bg-[#181818] border border-[#262626] p-2 rounded-lg flex items-center justify-between gap-2';
+        row.innerHTML = `
+          <div class="flex items-center gap-2 min-w-0">
+            <span class="text-[10px] text-gray-500 font-mono">${index + 1}.</span>
+            <span class="text-gray-200 font-medium truncate">${item.desc}</span>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <span class="font-mono font-bold ${item.unit === 'mb' ? 'text-emerald-400' : 'text-blue-400'}">${item.val.toFixed(2)} ${item.unit}</span>
+            <button onclick="deleteTakeoffRow('${item.id}')" class="text-gray-500 hover:text-rose-400">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+        `;
+        container.appendChild(row);
+      });
+
+      document.getElementById('takeoff-sum-mb').innerText = `${sumMb.toFixed(2)} mb`;
+      document.getElementById('takeoff-sum-m2').innerText = `${sumM2.toFixed(2)} m²`;
+
+      if (window.lucide) lucide.createIcons();
+    }
+
+    function exportTakeoffCSV() {
+      const session = getActiveTakeoffSession();
+      let csv = `Karta Obmiarowa:;${session.title};Data:;${session.date}\nLp;Opis pozycji;Wartosc;Jednostka\n`;
+      (session.items || []).forEach((it, idx) => {
+        csv += `${idx + 1};${it.desc};${it.val};${it.unit}\n`;
+      });
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `Obmiar_${session.title.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0,10)}.csv`;
+      a.click();
+    }
+
+    /* ========================================================= */
+    /* EKSPORT KARTY OBMIAROWEJ DO PDF (NAPRAWIONE PUNKTY)      */
+    /* ========================================================= */
+    function generateTakeoffSnapshotCanvas(session) {
+      return new Promise((resolve) => {
+        if (!session.blueprint) { resolve(null); return; }
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth; // Wymuszenie 1:1 z obrazem bazowym
+          canvas.height = img.naturalHeight;
+          const ctx = canvas.getContext('2d');
+
+          ctx.filter = 'grayscale(100%) contrast(140%)';
+          ctx.drawImage(img, 0, 0);
+          ctx.filter = 'none';
+
+          // Idealne naniesienie linii i punktów na podstawie procentów naturalnego obrazu (teraz w skali 1:1)
+          (session.lines || []).forEach(l => {
+            const x1 = (l.x1Pct / 100) * canvas.width;
+            const y1 = (l.y1Pct / 100) * canvas.height;
+            const x2 = (l.x2Pct / 100) * canvas.width;
+            const y2 = (l.y2Pct / 100) * canvas.height;
+            const midX = (x1 + x2) / 2;
+            const midY = (y1 + y2) / 2;
+
+            // Linia pomiarowa
+            ctx.strokeStyle = '#059669';
+            ctx.lineWidth = Math.max(canvas.width * 0.0035, 4);
+            ctx.setLineDash([10, 10]);
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Punkty pomiarowe z wyrazistym czarno-białym obrysem (lepsza widoczność na wydruku)
+            const radius = Math.max(canvas.width * 0.008, 9);
+            [ { x: x1, y: y1 }, { x: x2, y: y2 } ].forEach(pt => {
+              ctx.fillStyle = '#10b981';
+              ctx.beginPath();
+              ctx.arc(pt.x, pt.y, radius, 0, Math.PI * 2);
+              ctx.fill();
+
+              ctx.strokeStyle = '#ffffff';
+              ctx.lineWidth = Math.max(radius * 0.35, 3);
+              ctx.stroke();
+              
+              ctx.strokeStyle = '#000000';
+              ctx.lineWidth = 1;
+              ctx.stroke();
+            });
+
+            // Etykieta wymiaru
+            const boxW = Math.max(canvas.width * 0.07, 84);
+            const boxH = Math.max(canvas.height * 0.026, 30);
+            ctx.fillStyle = 'rgba(0,0,0,0.85)';
+            ctx.fillRect(midX - boxW / 2, midY - boxH / 2, boxW, boxH);
+            ctx.strokeStyle = '#10b981';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(midX - boxW / 2, midY - boxH / 2, boxW, boxH);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = `bold ${Math.round(boxH * 0.55)}px monospace`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(l.label, midX, midY);
+          });
+
+          resolve(canvas.toDataURL('image/jpeg', 0.9));
+        };
+        img.src = session.blueprint;
+      });
+    }
+
+    async function openTakeoffPrintPreview() {
+      const session = getActiveTakeoffSession();
+      closeTakeoffModal();
+      switchView('takeoff-print');
+
+      const container = document.getElementById('takeoff-print-container');
+      container.innerHTML = '<div class="text-white text-center py-10 text-xs">Generowanie podglądu karty obmiarowej...</div>';
+
+      const snapshotUrl = await generateTakeoffSnapshotCanvas(session);
+      const totalMb = (session.items || []).filter(i => i.unit === 'mb').reduce((acc, i) => acc + i.val, 0);
+      const totalM2 = (session.items || []).filter(i => i.unit === 'm2').reduce((acc, i) => acc + i.val, 0);
+
+      container.innerHTML = `
+        <div class="a4-page">
+          <div class="flex justify-between items-start border-b-2 border-black pb-3 mb-4">
+            <div>
+              <div class="text-[14pt] font-black tracking-tight text-black uppercase">KARTA OBMIARU Z NATURY</div>
+              <div class="text-[11pt] font-bold text-emerald-800">${session.title}</div>
+            </div>
+            <div class="text-right text-[8.5pt] text-black">
+              <div>Projekt: <b>${appState.project.name}</b></div>
+              <div>Data wykonania: <b>${session.date}</b></div>
+            </div>
+          </div>
+
+          <div class="border border-black w-full h-[140mm] flex items-center justify-center bg-white overflow-hidden mb-4 relative">
+            ${snapshotUrl ? `<img src="${snapshotUrl}" class="absolute inset-0 w-full h-full object-contain" />` : '<span class="text-xs text-gray-400">Brak załączonego rzutu graficznego</span>'}
+          </div>
+
+          <div class="text-[10pt] font-bold text-black mb-1">Zestawienie pozycji obmiarowych:</div>
+          <table class="w-full border-collapse text-[9pt] mb-4">
+            <thead>
+              <tr class="bg-gray-100">
+                <th class="border border-black p-1.5 text-center w-12">Lp.</th>
+                <th class="border border-black p-1.5 text-left">Opis elementu / lokalizacja</th>
+                <th class="border border-black p-1.5 text-right w-24">Wartość</th>
+                <th class="border border-black p-1.5 text-center w-20">Jedn.</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(session.items && session.items.length > 0) ? session.items.map((it, idx) => `
+                <tr>
+                  <td class="border border-black p-1 text-center">${idx + 1}</td>
+                  <td class="border border-black p-1">${it.desc}</td>
+                  <td class="border border-black p-1 text-right font-mono font-bold">${it.val.toFixed(2)}</td>
+                  <td class="border border-black p-1 text-center font-mono">${it.unit}</td>
+                </tr>
+              `).join('') : '<tr><td colspan="4" class="border border-black p-2 text-center text-gray-500">Brak pozycji obmiarowych</td></tr>'}
+            </tbody>
+            <tfoot>
+              <tr class="bg-gray-50 font-bold">
+                <td colspan="2" class="border border-black p-1.5 text-right">SUMA ŁĄCZNA:</td>
+                <td colspan="2" class="border border-black p-1.5 text-right font-mono text-emerald-800">
+                  ${totalMb.toFixed(2)} mb &nbsp;|&nbsp; ${totalM2.toFixed(2)} m²
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+
+          <div class="mt-auto pt-2 border-t border-black flex justify-between text-[8pt] text-black">
+            <span>INSPEKTOR BUDOWY • Przedmiary & Obmiary</span>
+            <span>Podpis Inżyniera: ............................................</span>
+          </div>
+        </div>
+      `;
+    }
+
+    /* ========================================================= */
+    /* ZARZĄDZANIE PLIKAMI PROJEKTU                              */
+    /* ========================================================= */
+    function exportProjectFile() {
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(appState, null, 2));
+      const a = document.createElement('a');
+      a.href = dataStr;
+      a.download = `Projekt_${appState.project.name.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0,10)}.insp`;
+      a.click();
+      recordAudit('Wyeksportowano pełen plik projektu (.insp)');
+    }
+
+    function importProjectFile(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async (evt) => {
+        try {
+          const parsed = JSON.parse(evt.target.result);
+          if (parsed && parsed.buildings) {
+            appState = parsed;
+            await persistData();
+            renderStructureSubbar();
+            loadFloor(getCurrentFloor().id);
+            renderTodos();
+            renderCalendar();
+            loadRoheBlueprint();
+            renderRoheDefectTypesList();
+            renderRohePhotosSelection();
+            renderTakeoffSessionsList();
+            alert('Projekt wczytany pomyślnie!');
+          }
+        } catch (err) {
+          alert('Błąd podczas odczytu pliku projektu.');
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    async function createNewEmptyProject() {
+      if (confirm('Czy na pewno chcesz utworzyć całkiem nowy projekt? Aktualne dane w bazie zostaną nadpisane.')) {
+        appState = {
+          project: {
+            name: 'Nowa Inwestycja Budowlana',
+            contractor: 'Wykonawca Robót Sp. z o.o.',
+            docNum: 'RJ-001-2026',
+            date: new Date().toLocaleDateString('pl-PL')
+          },
+          currentBuildingId: 'b-1',
+          buildings: [
+            {
+              id: 'b-1',
+              name: 'Budynek A',
+              currentFloorId: 'b1-f0',
+              floors: [{ id: 'b1-f0', name: 'Parter', blueprint: null, pins: [] }]
+            }
+          ],
+          roheReport: {
+            blueprint: null,
+            defectTypes: [
+              { id: 'dt-1', num: 1, text: 'Niezgodność wymiarowa stolarki' }
+            ],
+            pins: []
+          },
+          takeoffBook: {
+            activeSessionId: 'tk-1',
+            sessions: [
+              {
+                id: 'tk-1',
+                title: 'Karta Obmiarowa 1',
+                date: new Date().toLocaleDateString('pl-PL'),
+                blueprint: null,
+                items: [],
+                lines: []
+              }
+            ]
+          },
+          todos: [],
+          calendarSchedule: [],
+          logEntries: [],
+          auditTrail: [
+            { id: `aud-${Date.now()}`, timestamp: new Date().toLocaleDateString('pl-PL'), text: 'Utworzono nowy czysty projekt.' }
+          ],
+          customNormChecklist: [],
+          customNormCategories: []
+        };
+        await persistData();
+        renderStructureSubbar();
+        loadFloor(getCurrentFloor().id);
+        renderTodos();
+        renderCalendar();
+        loadRoheBlueprint();
+        renderRoheDefectTypesList();
+        renderRohePhotosSelection();
+        renderTakeoffSessionsList();
+        switchView('dashboard');
+      }
+    }
+
+    function toggleElement(id) {
+      const el = document.getElementById(id);
+      if (el) el.classList.toggle('hidden');
+    }
+  </script>
+</body>
+</html>
